@@ -341,10 +341,16 @@ function go(number, locate = true, expand = locate) {
   for (const note of linked) detail.append(dom('p', note.comment, 'change-text'));
   if (expand) openDetails();
   for (const panel of panels) {
-    for (const element of panel.root.querySelectorAll('.selected')) element.classList.remove('selected');
+    for (const element of panel.root.querySelectorAll('.selected, .deletion-context')) {
+      element.classList.remove('selected', 'deletion-context');
+    }
     const hit = visibleMatch(panel.root, 'data-change-id', item.id);
     hit?.classList.add('selected');
     const target = hit ?? item.anchors.map((anchor) => visibleMatch(panel.root, 'data-anchor', anchor)).find(Boolean);
+    if (panel.side === 'right' && item.kind === 'deleted' && !hit && target) {
+      target.classList.add('deletion-context');
+      detail.append(dom('small', '右栏虚线标出删除位置所在段落。', 'block-meta'));
+    }
     if (locate && target) reveal(panel, target.getBoundingClientRect());
     if (locate && !target && byId('sync').checked) {
       const other = panels.find((entry) => entry !== panel);

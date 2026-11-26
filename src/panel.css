@@ -14,6 +14,9 @@
 .doc :is(ins, del).change-common { background: inherit; color: inherit; text-decoration: none; }
 .doc .rev-format-marker::before { content: "◆"; color: #966900; }
 .doc :is(.rev-para-ins, .rev-para-del)[data-change-id] { border-inline-start: 2px solid #d7a33c; }
+.doc[data-side="right"] :is(.not-in-original[data-anchor], tr.rev-row-ins) { background-color: #e2fbe9; }
+.doc[data-side="right"] .rev-para-ins[data-change-id] { border-inline-start-color: #15803d; }
+.doc .deletion-context { outline: 2px dashed #54718e; outline-offset: 1px; }
 .doc [data-change-id] { cursor: pointer; }
 .doc [data-change-id].selected { outline: 2px solid #315e9b; outline-offset: 1px; }
 ::highlight(review-annotations) { background-color: #ffdd79; color: #382900; text-decoration: underline; }
