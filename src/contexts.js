@@ -48,6 +48,15 @@ export function locateChange(change, positionsBySide) {
 }
 
 export function annotationEvidence(anchor, changes, positionsBySide) {
+  if (anchor.parts?.length) {
+    const parts = anchor.parts.map((part) => annotationEvidence({ ...part, side: anchor.side }, changes, positionsBySide));
+    const evidence = { position: parts[0].position, endPosition: parts.at(-1).position };
+    for (const side of ['left', 'right']) {
+      const entries = [...new Set(parts.map((part) => part[side]).filter(Boolean))];
+      evidence[side] = entries.length ? { ...entries[0], text: entries.map((entry) => entry.text).join('\n') } : null;
+    }
+    return evidence;
+  }
   const other = anchor.side === 'left' ? 'right' : 'left';
   const own = positionsBySide[anchor.side].positions.get(anchor.anchor);
   const paired = positionsBySide[other].positions.get(anchor.anchor);
@@ -61,9 +70,26 @@ export function annotationEvidence(anchor, changes, positionsBySide) {
 
 export function carryAnnotation(annotation, sourceRound, newRound, rightIndex, rightRoot) {
   const origin = { roundId: sourceRound.id, annotationId: annotation.id, number: annotation.number };
-  const prior = { ...annotation, id: crypto.randomUUID(), origin, changeId: null,
+  const prior = { ...annotation, id: crypto.randomUUID(), origin, changeId: null, changeIds: undefined,
     status: 'pending', createdAt: annotation.createdAt, needsLocation: true };
   if (annotation.needsLocation) return prior;
+  if (annotation.parts?.length) {
+    const parts = annotation.parts;
+    const starts = rightIndex.entries.map((entry, i) => i).filter((i) =>
+      parts.every((part, j) => rightIndex.entries[i + j]?.text === part.paragraph) &&
+      (!annotation.evidence?.position?.section || rightIndex.entries[i].section === annotation.evidence.position.section));
+    if (starts.length !== 1) return prior;
+    const start = starts[0];
+    const changeIds = new Set();
+    const nextParts = parts.map((part, j) => {
+      const ids = rightIndex.spansByEntry[start + j].filter((span) => span.start < part.end && span.end > part.start);
+      for (const span of ids) changeIds.add(span.id);
+      return { ...part, anchor: rightIndex.entries[start + j].anchor, changeId: null };
+    });
+    const proposed = { ...prior, anchor: nextParts[0].anchor, parts: nextParts, changeIds: [...changeIds],
+      side: 'right', fileHash: newRound.revised.hash, needsLocation: false };
+    return resolveRange(rightRoot, proposed) ? proposed : prior;
+  }
   const paragraph = annotation.paragraph;
   const candidates = rightIndex.entries.filter((entry) => entry.text === paragraph);
   if (candidates.length !== 1) return prior;

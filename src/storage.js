@@ -131,6 +131,13 @@ function validate(project) {
           !Number.isInteger(annotation.start) || !Number.isInteger(annotation.end) ||
           annotation.start < 0 || annotation.end <= annotation.start) throw new Error('备份包含无效的人工批注。');
       noteIds.add(annotation.id);
+      if (annotation.parts !== undefined && (!Array.isArray(annotation.parts) || annotation.parts.length < 2 ||
+          annotation.parts.some((part) => !object(part) || !text(part.anchor) || !text(part.paragraph) ||
+            !text(part.quote) || !Number.isInteger(part.start) || !Number.isInteger(part.end) ||
+            part.start < 0 || part.end <= part.start || part.end > part.paragraph.length ||
+            part.paragraph.slice(part.start, part.end) !== part.quote))) throw new Error('备份包含无效的跨段批注。');
+      if (annotation.changeIds !== undefined && (!Array.isArray(annotation.changeIds) ||
+          !annotation.changeIds.every(text))) throw new Error('备份包含无效的批注修改编号。');
     }
     if (round.feedback.some((item) => !object(item) || !text(item.markdown) || !text(item.createdAt))) {
       throw new Error('备份包含无效的反馈记录。');

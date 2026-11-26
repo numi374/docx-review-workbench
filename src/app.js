@@ -40,6 +40,8 @@ let records = [];
 let assessments = {};
 let index = -1;
 let selection = null;
+let selectionPin = null;
+let placementFrame = 0;
 let editing = null;
 let running = false;
 let saving = false;
@@ -154,51 +156,67 @@ function linkedNotes(changeId) {
 function closeSelectionCard() {
   selectionCard.hidden = true;
   selection = null;
+  selectionPin = null;
+  cancelAnimationFrame(placementFrame);
+  placementFrame = 0;
 }
 
-function showSelectionCard(model, rect) {
+function showSelectionCard(model, pin) {
   selection = model;
+  selectionPin = pin;
   const side = positionsBySide[model.side];
-  const position = side.positions.get(model.anchor);
-  const spans = side.spansByEntry[side.entries.indexOf(position)] ?? [];
-  const overlaps = spans.filter(({ start, end }) => start < model.end && end > model.start);
-  const targets = new Set(overlaps.map((span) => span.id));
-  if (model.changeId) targets.add(model.changeId);
-  const paragraphScope = !targets.size && position;
-  if (paragraphScope) {
-    for (const change of changes) if (change.anchors.includes(model.anchor)) targets.add(change.id);
+  const targets = new Set();
+  const anchors = new Set();
+  for (const part of model.parts ?? [model]) {
+    const position = side.positions.get(part.anchor);
+    if (position) anchors.add(part.anchor);
+    const spans = side.spansByEntry[side.entries.indexOf(position)] ?? [];
+    for (const span of spans) if (span.start < part.end && span.end > part.start) targets.add(span.id);
+    if (part.changeId) targets.add(part.changeId);
   }
+  const paragraphScope = !targets.size && anchors.size > 0;
+  if (paragraphScope) {
+    for (const change of changes) if (change.anchors.some((anchor) => anchors.has(anchor))) targets.add(change.id);
+  }
+  if (model.parts) model.changeIds = [...targets];
   const notes = records.filter((note) => linkFor(note).ids.some((id) => targets.has(id)));
   const body = byId('selection-reasons');
   body.replaceChildren();
-  byId('selection-title').textContent = paragraphScope && targets.size ? '本段修改理由' : '修改理由';
+  byId('selection-title').textContent = model.parts ? `所选 ${model.parts.length} 段的修改理由`
+    : paragraphScope && targets.size ? '本段修改理由' : '修改理由';
   for (const note of notes) {
     const section = dom('article');
-    const confidence = assessments[note.id].confidence;
-    const link = linkFor(note);
-    const label = link.label + (confidence === 'none' ? '' : ' · ' + confidenceLabel[confidence]);
-    section.append(dom('p', note.reason || '该记录未提取到修改理由。'),
-      dom('span', label, 'badge linked'), dom('small', noteTitle(note, records.indexOf(note))));
-    const items = changes.filter((item) => targets.has(item.id) && link.ids.includes(item.id));
-    const before = note.before || items.map((item) => item.moveEdit?.from ?? item.removedText).filter(Boolean).join('\n');
-    const after = note.after || items.map((item) => item.moveEdit?.to ?? item.addedText).filter(Boolean).join('\n');
-    if (before) section.append(dom('div', '原文　' + before, 'change-text before'));
-    if (after) section.append(dom('div', '二校稿　' + after, 'change-text after'));
+    section.append(dom('p', note.reason || '该记录未提供修改理由。'));
     body.append(section);
   }
   if (!notes.length) body.append(dom('p', current.notes ? '此处没有已关联的修改说明。' : '本轮尚未导入修改说明。', 'muted'));
   body.scrollTop = 0;
-  placeSelectionCard(rect);
+  placeSelectionCard();
 }
 
-function placeSelectionCard(rect) {
+function scheduleSelectionPlacement() {
+  if (!selectionPin || placementFrame) return;
+  placementFrame = requestAnimationFrame(() => {
+    placementFrame = 0;
+    placeSelectionCard();
+  });
+}
+
+function placeSelectionCard() {
+  if (!selectionPin) return;
+  const rect = selectionPin.getBoundingClientRect();
+  const host = byId(selection.side).getBoundingClientRect();
   selectionCard.style.maxHeight = '';
   selectionCard.hidden = false;
   const gap = 8;
   const width = document.documentElement.clientWidth;
   const height = document.documentElement.clientHeight;
-  const below = height - rect.bottom - 2 * gap;
-  const above = rect.top - 2 * gap;
+  const topEdge = Math.min(height, Math.max(0, host.top));
+  const bottomEdge = Math.max(topEdge, Math.min(height, host.bottom));
+  const top = Math.min(bottomEdge, Math.max(topEdge, rect.top));
+  const bottom = Math.min(bottomEdge, Math.max(topEdge, rect.bottom));
+  const below = height - bottom - 2 * gap;
+  const above = top - 2 * gap;
   const card = selectionCard.getBoundingClientRect();
   const useBelow = card.height <= below || (above < card.height && below >= above);
   const available = useBelow ? below : above;
@@ -206,7 +224,7 @@ function placeSelectionCard(rect) {
   if (available < card.height && available >= 128) selectionCard.style.maxHeight = available + 'px';
   const h = selectionCard.offsetHeight;
   selectionCard.style.left = Math.max(gap, Math.min(rect.left, width - card.width - gap)) + 'px';
-  selectionCard.style.top = Math.max(gap, Math.min(useBelow ? rect.bottom + gap : rect.top - h - gap, height - h - gap)) + 'px';
+  selectionCard.style.top = Math.max(gap, Math.min(useBelow ? bottom + gap : top - h - gap, height - h - gap)) + 'px';
 }
 
 function noteTitle(note, i) {
@@ -290,8 +308,11 @@ function previewNotes(notes, results, items, overrides = {}) {
 byId('preview-apply').onclick = () => byId('notes-preview').close('apply');
 byId('preview-cancel').onclick = () => byId('notes-preview').close('cancel');
 
-function reasonFor(changeId) {
-  return linkedNotes(changeId).filter((note) => note.reason)
+function reasonFor(annotation) {
+  const related = annotation.changeIds?.length
+    ? records.filter((note) => linkFor(note).ids.some((id) => annotation.changeIds.includes(id)))
+    : linkedNotes(annotation.changeId);
+  return related.filter((note) => note.reason)
     .map((note) => (note.number ? '记录 ' + note.number + ' · ' : '') + note.reason).join('\n');
 }
 
@@ -300,6 +321,12 @@ function annotationFileName(annotation, located) {
   if (located || !annotation.fileHash || currentFile.hash === annotation.fileHash) return currentFile.name;
   return [project.original, ...project.rounds.flatMap((round) => [round.base, round.revised])]
     .find((ref) => ref.hash === annotation.fileHash)?.name ?? '历史文档';
+}
+
+function annotationLocation(evidence) {
+  if (!evidence?.position) return '位置待核对';
+  const start = positionLabel(evidence.position);
+  return evidence.endPosition ? start + ' 至 ' + positionLabel(evidence.endPosition) : start;
 }
 
 function updateProjectSummary() {
@@ -396,7 +423,7 @@ function go(number, locate = true, expand = locate) {
     byId('notes-details').open = true;
     byId('notes-details').scrollIntoView({ block: 'nearest' });
   }));
-  const linked = current.annotations.filter((note) => note.changeId === item.id);
+  const linked = current.annotations.filter((note) => note.changeId === item.id || note.changeIds?.includes(item.id));
   for (const note of linked) detail.append(dom('p', note.comment, 'change-text'));
   if (expand) openDetails();
   for (const panel of panels) {
@@ -451,7 +478,7 @@ function paintAnnotations() {
     const row = dom('div', undefined, 'item');
     const state = annotation.status === 'confirmed' ? '已确认' : '待处理';
     const context = annotation.evidence;
-    const location = context?.position ? positionLabel(context.position) : '位置待核对';
+    const location = annotationLocation(context);
     const owner = annotation.side === 'left' ? (current.baseRoundId ? '基准稿' : '原文') : '二校稿';
     row.append(dom('strong', annotation.number), dom('span', state, 'badge linked'));
     if (!range) row.append(dom('span', '待重新定位', 'badge'));
@@ -470,7 +497,7 @@ function paintAnnotations() {
     evidence.append(dom('summary', '查看原文、二校稿和原因'),
       dom('div', '原文：' + (context?.left?.text ?? '无对应段落'), 'change-text before'),
       dom('div', '二校稿：' + (context?.right?.text ?? '无对应段落'), 'change-text after'),
-      dom('div', '原因：' + (reasonFor(annotation.changeId) || '未关联修改说明'), 'change-text'));
+      dom('div', '原因：' + (reasonFor(annotation) || '未关联修改说明'), 'change-text'));
     if (!range && annotation.reasonAtReview) {
       evidence.append(dom('div', '历史记录中的原因：' + annotation.reasonAtReview, 'change-text'));
     }
@@ -755,7 +782,7 @@ async function openProject(id, roundId) {
 for (const panel of panels) {
   const other = panels.find((entry) => entry !== panel);
   panel.host.addEventListener('scroll', () => {
-    closeSelectionCard();
+    if (selection?.side === panel.side) scheduleSelectionPlacement();
     const ignored = scrollExpected.get(panel.host);
     scrollExpected.delete(panel.host);
     if (byId('sync').checked && (ignored === undefined || Math.abs(ignored - panel.host.scrollTop) > 1)) {
@@ -769,8 +796,7 @@ for (const panel of panels) {
       closeSelectionCard();
       return;
     }
-    const { rect, ...model } = anchor;
-    showSelectionCard(model, rect);
+    showSelectionCard(anchor.model, anchor.pin);
   });
   panel.root.addEventListener('click', (event) => {
     if (window.getSelection().toString()) return;
@@ -788,11 +814,14 @@ for (const panel of panels) {
 }
 
 byId('selection-close').addEventListener('click', closeSelectionCard);
-document.addEventListener('pointerdown', (event) => {
-  if (!selectionCard.hidden && !event.composedPath().includes(selectionCard)) closeSelectionCard();
+document.addEventListener('click', (event) => {
+  const path = event.composedPath();
+  if (!selectionCard.hidden && !path.includes(selectionCard) && !panels.some(({ host }) => path.includes(host))) {
+    closeSelectionCard();
+  }
 }, true);
-window.addEventListener('scroll', closeSelectionCard, { passive: true });
-window.addEventListener('resize', closeSelectionCard);
+window.addEventListener('scroll', scheduleSelectionPlacement, { passive: true });
+window.addEventListener('resize', scheduleSelectionPlacement);
 selectionButton.addEventListener('pointerdown', (event) => event.preventDefault());
 selectionButton.addEventListener('click', async () => {
   if (!selection || running || saving) return;
@@ -802,10 +831,10 @@ selectionButton.addEventListener('click', async () => {
   if (!reanchoring) return editAnnotation(selected);
   const id = reanchoring;
   const annotations = current.annotations.map((note) => note.id === id
-    ? { ...note, ...selected, needsLocation: false,
+    ? { ...note, parts: undefined, changeIds: undefined, ...selected, needsLocation: false,
       fileHash: selected.side === 'left' ? current.base.hash : current.revised.hash,
       evidence: annotationEvidence(selected, changes, positionsBySide),
-      reasonAtReview: reasonFor(selected.changeId) }
+      reasonAtReview: reasonFor(selected) }
     : note);
   if (await saveAnnotations(annotations)) startReanchor(null);
 });
@@ -821,7 +850,7 @@ byId('comment-form').addEventListener('submit', async (event) => {
     number: editing.number ?? nextNumber(current, current.nextAnnotationNumber),
     fileHash: editing.fileHash ?? (editing.side === 'left' ? current.base.hash : current.revised.hash),
     evidence: editing.evidence ?? annotationEvidence(editing, changes, positionsBySide),
-    reasonAtReview: reasonFor(editing.changeId),
+    reasonAtReview: reasonFor(editing),
     comment, suggestion: byId('comment-suggestion').value.trim(), status: byId('comment-status').value,
   };
   const notes = editing.id ? current.annotations.map((item) => item.id === annotation.id ? annotation : item) :
@@ -954,10 +983,10 @@ function reportAnnotations() {
       ...annotation, needsLocation,
       fileName: (needsLocation && previous ? '第 ' + previous + ' 轮历史引用 · ' : '') +
         annotationFileName(annotation, !needsLocation),
-      location: evidence?.position ? positionLabel(evidence.position) : '位置待核对',
+      location: annotationLocation(evidence),
       before: evidence?.left?.text ?? (annotation.side === 'left' ? annotation.paragraph : ''),
       after: evidence?.right?.text ?? (annotation.side === 'right' ? annotation.paragraph : ''),
-      reason: reasonFor(annotation.changeId) || (needsLocation && annotation.reasonAtReview
+      reason: reasonFor(annotation) || (needsLocation && annotation.reasonAtReview
         ? '历史记录中的原因：' + annotation.reasonAtReview : ''),
     };
   });

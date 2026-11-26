@@ -96,8 +96,6 @@ pre, .change-text { font: inherit; white-space: pre-wrap; overflow-wrap: anywher
 #selection-reasons { padding: 0 .85rem .65rem; overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
 #selection-reasons article + article { border-top: 1px solid #e1e7ee; margin-top: .65rem; padding-top: .6rem; }
 #selection-reasons p { line-height: 1.55; white-space: pre-wrap; }
-#selection-reasons .badge { margin: .3rem .4rem .2rem 0; }
-#selection-reasons .change-text { font-size: .86rem; }
 #selection-card footer { justify-content: flex-end; border-top: 1px solid #e1e7ee; }
 #annotate { padding: .25rem .6rem; font-size: .88rem; }
 dialog { width: min(560px, 92vw); border: 1px solid #c7d3e0; border-radius: 10px; color: inherit; }

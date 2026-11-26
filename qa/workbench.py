@@ -56,10 +56,10 @@ def create_inputs(path):
     return original, revised, second, markdown, word_notes, txt_notes
 
 
-def drag_text(page, quote, side="right"):
+def text_coords(page, quote, side):
     paragraph = page.locator(f"#{side} p:visible, #{side} h1:visible").filter(has_text=quote).first
     paragraph.scroll_into_view_if_needed()
-    x0, x1, y = paragraph.evaluate(
+    return paragraph.evaluate(
         """(block, quote) => {
           const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
           while (walker.nextNode()) {
@@ -76,9 +76,16 @@ def drag_text(page, quote, side="right"):
         }""",
         quote,
     )
+
+
+def drag_text(page, quote, side="right", through=None):
+    x0, x1, y = text_coords(page, quote, side)
+    end_y = y
+    if through:
+        _, x1, end_y = text_coords(page, through, side)
     page.mouse.move(x0, y)
     page.mouse.down()
-    page.mouse.move(x1, y, steps=10)
+    page.mouse.move(x1, end_y, steps=10)
     page.mouse.up()
     expect(page.locator("#annotate")).to_be_visible()
 
@@ -139,17 +146,26 @@ def exercise(p, url, folder):
     card = page.locator("#selection-card")
     drag_text(page, "完全避免", "left")
     expect(card).to_contain_text("原表述过于绝对")
-    expect(card).to_contain_text("高可信度")
-    expect(card.locator(".after")).to_contain_text("降低")
+    expect(card.locator("#selection-reasons")).to_have_text("原表述过于绝对。")
     drag_text(page, "请阅最新的复核记录。")
     expect(card).to_contain_text("此处没有已关联的修改说明")
     expect(card).not_to_contain_text("原表述过于绝对")
     page.keyboard.press("Escape")
     expect(card).to_be_hidden()
-    drag_text(page, "降低")
-    expect(card.locator(".before")).to_contain_text("完全避免")
+    drag_text(page, "降低", through="算法验证通过。")
+    expect(card.locator("h2")).to_contain_text("所选 2 段")
+    expect(card.locator("#selection-reasons")).to_have_text("原表述过于绝对。")
+    page.set_viewport_size({"width": 800, "height": 600})
+    page.evaluate("window.scrollTo(0, 250)")
+    assert page.evaluate("window.scrollY") > 0
+    page.locator("#right").evaluate("(host) => { host.scrollTop += 150 }")
+    assert page.locator("#right").evaluate("(host) => host.scrollTop") > 0
+    expect(card).to_be_in_viewport(ratio=1)
+    expect(card.locator("#selection-reasons")).to_have_text("原表述过于绝对。")
     card.get_by_role("button", name="关闭修改理由").click()
     expect(card).to_be_hidden()
+    page.set_viewport_size({"width": 1600, "height": 1050})
+    page.evaluate("window.scrollTo(0, 0)")
     expect(page.locator("#right td[colspan='2']")).to_contain_text("以上结果")
     for side, tag, phrase, selected_bg, paragraph_class, whole_phrase, paragraph_bg in [
         ("left", "del", "完全避免", "rgb(246, 218, 218)", "not-in-edited", "待废弃说明。", "rgb(252, 232, 232)"),
@@ -186,7 +202,7 @@ def exercise(p, url, folder):
     expect(card.locator("article")).to_have_count(2)
     expect(card).to_contain_text("原表述过于绝对")
     expect(card).to_contain_text("此记录只有说明")
-    expect(card).to_contain_text("人工匹配")
+    expect(card.locator(".badge, .before, .after")).to_have_count(0)
     page.keyboard.press("Escape")
     note.get_by_role("button", name="解除关联").click()
     expect(page.locator("#change")).not_to_contain_text("此记录只有说明")
