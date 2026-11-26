@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from docx import Document
+from docx.enum.text import WD_COLOR_INDEX
 
 ROOT = Path(__file__).parent
 
@@ -13,6 +14,7 @@ def create(revised, directory=ROOT):
     paragraph = doc.add_paragraph("该系统")
     wording = paragraph.add_run("能够降低" if revised else "能够完全避免")
     wording.bold = True
+    wording.font.highlight_color = WD_COLOR_INDEX.WHITE
     paragraph.add_run("数据丢失")
     paragraph.add_run("的风险。" if revised else "。")
     paragraph.add_run(" SLA 99.9%").italic = True
@@ -34,7 +36,8 @@ def create(revised, directory=ROOT):
     table.cell(1, 0).text = "恢复时间"
     table.cell(1, 1).text = "12 小时" if revised else "24 小时"
     table.cell(2, 0).merge(table.cell(2, 1)).text = "以上结果适用于测试环境。"
-    doc.add_paragraph("补充验证记录。" if revised else "待废弃说明。")
+    changed_paragraph = doc.add_paragraph()
+    changed_paragraph.add_run("补充验证记录。" if revised else "待废弃说明。").font.highlight_color = WD_COLOR_INDEX.WHITE
     doc.add_paragraph("请阅最新的复核记录。")
     doc.save(directory / ("reviewed.docx" if revised else "original.docx"))
 

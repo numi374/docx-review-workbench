@@ -46,6 +46,13 @@
 .doc[data-side] :is(ins, del).change-as-formatting { background-color: #fbefce; }
 .doc[data-side] :is(ins, del).change-common { background-color: transparent; }
 
+/* Word can give individual runs or cells an opaque fill above the revision background. */
+.doc[data-side] :is(ins, del):not(.change-common) :where(span, a, em, strong, b, i, u, s, small, sub, sup),
+.doc[data-side="left"] :is(.not-in-edited[data-anchor], tr.rev-row-del) :where(div, p, li, td, th, span, a, em, strong, b, i, u, s, small, sub, sup),
+.doc[data-side="right"] :is(.not-in-original[data-anchor], tr.rev-row-ins) :where(div, p, li, td, th, span, a, em, strong, b, i, u, s, small, sub, sup) {
+  background: transparent !important;
+}
+
 .doc .rev-format-marker::before { content: "◆"; color: #966900; }
 /* Paragraph mark revisions tint the edge only. Unchanged words in the paragraph stay unmarked. */
 .doc[data-side="left"] .rev-para-del[data-change-id],

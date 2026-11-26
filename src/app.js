@@ -87,7 +87,7 @@ function mountDocument(panel, source) {
   sheet.dataset.side = panel.side;
   sheet.append(...[...source.body.childNodes].map((node) => node.cloneNode(true)));
   mergeJoinedParagraphs(sheet, panel.side);
-  markCommon(sheet, { ignoreCase: false, ignorePunctuation: false, ignoreWhitespace: false });
+  markCommon(sheet, { ignoreQuotes: false, ignoreDashes: false, ignoreWhitespace: false });
   const styles = dom('style', source.css + '\n' + panelCss);
   panel.root.replaceChildren(styles, sheet);
   panel.observer?.disconnect();

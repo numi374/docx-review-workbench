@@ -133,6 +133,20 @@ def exercise(p, url, folder):
     expect(page.locator("#change")).to_contain_text("原表述过于绝对")
     expect(page.locator("#change")).to_contain_text("自动匹配")
     expect(page.locator("#right td[colspan='2']")).to_contain_text("以上结果")
+    for side, tag, phrase, selected_bg, paragraph_class, whole_phrase, paragraph_bg in [
+        ("left", "del", "完全避免", "rgb(246, 218, 218)", "not-in-edited", "待废弃说明。", "rgb(252, 232, 232)"),
+        ("right", "ins", "降低", "rgb(212, 234, 219)", "not-in-original", "补充验证记录。", "rgb(229, 243, 233)"),
+    ]:
+        change = page.locator(f"#{side} {tag}[data-change-id]:visible").filter(has_text=phrase)
+        expect(change).to_have_css("background-color", selected_bg)
+        expect(change).to_have_css("text-decoration-line", "none")
+        expect(change.locator("span").filter(has_text=phrase)).to_have_css("background-color", "rgba(0, 0, 0, 0)")
+        whole = page.locator(f"#{side} p.{paragraph_class}:visible").filter(has_text=whole_phrase)
+        expect(whole).to_have_css("background-color", paragraph_bg)
+        expect(whole.locator("span").filter(has_text=whole_phrase)).to_have_css("background-color", "rgba(0, 0, 0, 0)")
+        unchanged = page.locator(f"#{side} p:visible").filter(has_text="请阅最新的复核记录。")
+        expect(unchanged).to_have_css("background-color", "rgba(0, 0, 0, 0)")
+        expect(unchanged.locator("ins, del")).to_have_count(0)
     page.locator("#notes-details > summary").click()
     list_ = page.locator("#note-list")
     expect(list_).to_contain_text("记录 01")
@@ -307,6 +321,34 @@ def real_sample(p, url, samples):
     import_round(page, samples / "aramlo-part-2-2025-05-06.edited-until-p257.docx",
         original=samples / "aramlo-part-2-2025-05-06.docx")
     wait_status(page, "598 处修改")
+    common_text = []
+    for side in ["left", "right"]:
+        common = page.locator(f"#{side} .change-common:visible")
+        assert common.count() > 0
+        common_text.append(common.evaluate_all("""(nodes) => {
+            const result = {};
+            for (const element of nodes) {
+                const id = element.dataset.changeId;
+                if (element.dataset.commonNeeds !== '' || getComputedStyle(element).backgroundColor !== 'rgba(0, 0, 0, 0)') {
+                    throw new Error('Common text must match exactly and have no revision background');
+                }
+                result[id] = (result[id] || '') + element.textContent;
+            }
+            return result;
+        }"""))
+        # A formatting marker can share a block with a whole-paragraph insertion or deletion.
+        # Such blocks retain the whole-paragraph background.
+        whole_class = "not-in-edited" if side == "left" else "not-in-original"
+        formatting = page.locator(f"#{side} .change-as-formatting:not(.{whole_class}):visible")
+        assert formatting.count() > 0
+        assert formatting.evaluate_all("""(nodes) => nodes.every(el =>
+            !['rgb(252, 232, 232)', 'rgb(229, 243, 233)'].includes(getComputedStyle(el).backgroundColor)
+        )""")
+        whole_bg = "rgb(252, 232, 232)" if side == "left" else "rgb(229, 243, 233)"
+        overlapping = page.locator(f"#{side} .change-as-formatting.{whole_class}:visible")
+        assert overlapping.count() > 0
+        assert overlapping.evaluate_all("(nodes, color) => nodes.every(el => getComputedStyle(el).backgroundColor === color)", whole_bg)
+    assert common_text[0] == common_text[1], common_text
     page.locator("#jump").select_option(index=50)
     assert page.locator("#left").evaluate("(el) => el.scrollTop") > 0
     def wait_scroll(matches):
