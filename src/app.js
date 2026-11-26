@@ -129,13 +129,6 @@ function reveal(panel, rect) {
   scrollTo(panel, scroller.scrollTop + rect.top - scroller.getBoundingClientRect().top - scroller.clientHeight * .25);
 }
 
-function openDetails() {
-  byId('workspace').classList.remove('closed');
-  byId('details').hidden = false;
-  byId('toggle').textContent = '隐藏详情';
-  byId('toggle').setAttribute('aria-expanded', 'true');
-}
-
 const confidenceLabel = { high: '高可信度', medium: '中可信度', low: '低可信度', none: '未匹配' };
 
 function effectiveLink(id, result, overrides, items) {
@@ -395,7 +388,7 @@ async function changeLink(noteId, changeId) {
   }
 }
 
-function go(number, locate = true, expand = locate) {
+function go(number, locate = true) {
   if (!changes[number]) return;
   index = number;
   const item = changes[index];
@@ -425,7 +418,6 @@ function go(number, locate = true, expand = locate) {
   }));
   const linked = current.annotations.filter((note) => note.changeId === item.id || note.changeIds?.includes(item.id));
   for (const note of linked) detail.append(dom('p', note.comment, 'change-text'));
-  if (expand) openDetails();
   for (const panel of panels) {
     for (const element of panel.root.querySelectorAll('.selected, .deletion-context')) {
       element.classList.remove('selected', 'deletion-context');
@@ -804,7 +796,6 @@ for (const panel of panels) {
       [...item.range.getClientRects()].some((rect) => event.clientX >= rect.left && event.clientX <= rect.right &&
         event.clientY >= rect.top && event.clientY <= rect.bottom));
     if (note) {
-      openDetails();
       editAnnotation(note.annotation);
       return;
     }
@@ -962,12 +953,13 @@ byId('width').addEventListener('input', (event) => {
   byId('columns').style.setProperty('--right', `${100 - width}fr`);
   anchorPairs.clear();
 });
-byId('toggle').addEventListener('click', () => {
-  if (byId('details').hidden) return openDetails();
-  byId('details').hidden = true;
-  byId('workspace').classList.add('closed');
-  byId('toggle').textContent = '显示详情';
-  byId('toggle').setAttribute('aria-expanded', 'false');
+byId('toggle').addEventListener('click', (event) => {
+  const details = byId('details');
+  const open = details.hidden;
+  details.hidden = !open;
+  byId('workspace').classList.toggle('closed', !open);
+  event.currentTarget.textContent = open ? '隐藏修改记录' : '显示修改记录';
+  event.currentTarget.setAttribute('aria-expanded', String(open));
 });
 
 const feedbackDialog = byId('feedback-dialog');

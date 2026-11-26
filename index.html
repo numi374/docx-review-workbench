@@ -34,14 +34,14 @@
       <label><input type="checkbox" id="sync" checked>同步滚动</label>
       <label class="width-label">栏宽<input type="range" id="width" min="30" max="70" value="50"></label>
       <button id="new-round" type="button" disabled>导入新轮次</button>
-      <button id="toggle" type="button" aria-expanded="true">隐藏详情</button>
+      <button id="toggle" type="button" aria-controls="details" aria-expanded="false">显示修改记录</button>
     </nav>
-    <section id="workspace" class="workspace">
+    <section id="workspace" class="workspace closed">
       <section id="columns" class="columns" aria-label="文档对比">
         <section class="sheet"><h2><span id="left-role">原文</span> <small id="left-name"></small></h2><div id="left" class="document"></div></section>
         <section class="sheet"><h2>二校稿 <small id="right-name"></small></h2><div id="right" class="document"></div></section>
       </section>
-      <aside id="details" aria-label="复核详情">
+      <aside id="details" aria-label="复核详情" hidden>
         <section><h2>当前修改</h2><div id="change">比较后可点击高亮或使用修改导航。</div></section>
         <details id="notes-details">
           <summary>修改说明</summary>
