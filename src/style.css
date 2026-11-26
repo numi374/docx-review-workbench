@@ -82,7 +82,24 @@ pre, .change-text { font: inherit; white-space: pre-wrap; overflow-wrap: anywher
 #reanchor-hint button { margin: .25rem; }
 .quote-button { display: block; width: 100%; text-align: start; }
 .annotation-evidence { margin-top: .5rem; }
-.selection { position: fixed; z-index: 4; }
+#selection-card {
+  position: fixed; z-index: 4; width: min(23rem, calc(100% - 16px));
+  max-height: min(22rem, 42dvh); display: flex; flex-direction: column;
+  background: #fffefa; border: 1px solid #cbd4da; border-radius: 10px;
+  box-shadow: 0 5px 22px #23364926; overflow: auto; overscroll-behavior: contain;
+}
+.selection-heading, #selection-card footer {
+  display: flex; align-items: center; flex: none; padding: .45rem .8rem;
+}
+.selection-heading { justify-content: space-between; }
+#selection-close { border: 0; background: transparent; color: #536275; font-size: 1.25rem; padding: .1rem .4rem; }
+#selection-reasons { padding: 0 .85rem .65rem; overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
+#selection-reasons article + article { border-top: 1px solid #e1e7ee; margin-top: .65rem; padding-top: .6rem; }
+#selection-reasons p { line-height: 1.55; white-space: pre-wrap; }
+#selection-reasons .badge { margin: .3rem .4rem .2rem 0; }
+#selection-reasons .change-text { font-size: .86rem; }
+#selection-card footer { justify-content: flex-end; border-top: 1px solid #e1e7ee; }
+#annotate { padding: .25rem .6rem; font-size: .88rem; }
 dialog { width: min(560px, 92vw); border: 1px solid #c7d3e0; border-radius: 10px; color: inherit; }
 .wide-dialog { width: min(820px, 94vw); max-height: 90dvh; }
 .dialog-header { margin-bottom: .85rem; }

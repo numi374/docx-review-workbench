@@ -25,6 +25,7 @@ const panels = Object.entries(sides).map(([side, label]) => {
   return { side, label, host, root: host.attachShadow({ mode: 'open' }) };
 });
 const dialog = byId('comment-dialog');
+const selectionCard = byId('selection-card');
 const selectionButton = byId('annotate');
 const newEngine = () => new Worker(new URL('./engine.worker.js', import.meta.url), { type: 'module' });
 let engine = newEngine();
@@ -148,6 +149,64 @@ function linkFor(note) {
 
 function linkedNotes(changeId) {
   return changeId ? records.filter((note) => linkFor(note).ids.includes(changeId)) : [];
+}
+
+function closeSelectionCard() {
+  selectionCard.hidden = true;
+  selection = null;
+}
+
+function showSelectionCard(model, rect) {
+  selection = model;
+  const side = positionsBySide[model.side];
+  const position = side.positions.get(model.anchor);
+  const spans = side.spansByEntry[side.entries.indexOf(position)] ?? [];
+  const overlaps = spans.filter(({ start, end }) => start < model.end && end > model.start);
+  const targets = new Set(overlaps.map((span) => span.id));
+  if (model.changeId) targets.add(model.changeId);
+  const paragraphScope = !targets.size && position;
+  if (paragraphScope) {
+    for (const change of changes) if (change.anchors.includes(model.anchor)) targets.add(change.id);
+  }
+  const notes = records.filter((note) => linkFor(note).ids.some((id) => targets.has(id)));
+  const body = byId('selection-reasons');
+  body.replaceChildren();
+  byId('selection-title').textContent = paragraphScope && targets.size ? '本段修改理由' : '修改理由';
+  for (const note of notes) {
+    const section = dom('article');
+    const confidence = assessments[note.id].confidence;
+    const link = linkFor(note);
+    const label = link.label + (confidence === 'none' ? '' : ' · ' + confidenceLabel[confidence]);
+    section.append(dom('p', note.reason || '该记录未提取到修改理由。'),
+      dom('span', label, 'badge linked'), dom('small', noteTitle(note, records.indexOf(note))));
+    const items = changes.filter((item) => targets.has(item.id) && link.ids.includes(item.id));
+    const before = note.before || items.map((item) => item.moveEdit?.from ?? item.removedText).filter(Boolean).join('\n');
+    const after = note.after || items.map((item) => item.moveEdit?.to ?? item.addedText).filter(Boolean).join('\n');
+    if (before) section.append(dom('div', '原文　' + before, 'change-text before'));
+    if (after) section.append(dom('div', '二校稿　' + after, 'change-text after'));
+    body.append(section);
+  }
+  if (!notes.length) body.append(dom('p', current.notes ? '此处没有已关联的修改说明。' : '本轮尚未导入修改说明。', 'muted'));
+  body.scrollTop = 0;
+  placeSelectionCard(rect);
+}
+
+function placeSelectionCard(rect) {
+  selectionCard.style.maxHeight = '';
+  selectionCard.hidden = false;
+  const gap = 8;
+  const width = document.documentElement.clientWidth;
+  const height = document.documentElement.clientHeight;
+  const below = height - rect.bottom - 2 * gap;
+  const above = rect.top - 2 * gap;
+  const card = selectionCard.getBoundingClientRect();
+  const useBelow = card.height <= below || (above < card.height && below >= above);
+  const available = useBelow ? below : above;
+  // A selection taller than the viewport can leave neither side usable.
+  if (available < card.height && available >= 128) selectionCard.style.maxHeight = available + 'px';
+  const h = selectionCard.offsetHeight;
+  selectionCard.style.left = Math.max(gap, Math.min(rect.left, width - card.width - gap)) + 'px';
+  selectionCard.style.top = Math.max(gap, Math.min(useBelow ? rect.bottom + gap : rect.top - h - gap, height - h - gap)) + 'px';
 }
 
 function noteTitle(note, i) {
@@ -581,7 +640,7 @@ async function displayRound(nextProject, nextRound, files, commit, previousRound
   index = changes.length ? 0 : -1;
   anchorPairs.clear();
   startReanchor(null);
-  selectionButton.hidden = true;
+  closeSelectionCard();
   byId('left-role').textContent = current.baseRoundId ? '基准稿' : '原文';
   byId('left-name').textContent = current.base.name;
   byId('right-name').textContent = current.revised.name;
@@ -696,7 +755,7 @@ async function openProject(id, roundId) {
 for (const panel of panels) {
   const other = panels.find((entry) => entry !== panel);
   panel.host.addEventListener('scroll', () => {
-    selectionButton.hidden = true;
+    closeSelectionCard();
     const ignored = scrollExpected.get(panel.host);
     scrollExpected.delete(panel.host);
     if (byId('sync').checked && (ignored === undefined || Math.abs(ignored - panel.host.scrollTop) > 1)) {
@@ -707,16 +766,11 @@ for (const panel of panels) {
     if (running || saving || !current) return;
     const anchor = captureAnchor(panel.root, panel.side);
     if (!anchor) {
-      selectionButton.hidden = true;
+      closeSelectionCard();
       return;
     }
     const { rect, ...model } = anchor;
-    selection = model;
-    Object.assign(selectionButton.style, {
-      top: `${Math.max(6, rect.top - 42)}px`,
-      left: `${Math.min(window.innerWidth - 180, Math.max(6, rect.left))}px`,
-    });
-    selectionButton.hidden = false;
+    showSelectionCard(model, rect);
   });
   panel.root.addEventListener('click', (event) => {
     if (window.getSelection().toString()) return;
@@ -733,11 +787,17 @@ for (const panel of panels) {
   });
 }
 
+byId('selection-close').addEventListener('click', closeSelectionCard);
+document.addEventListener('pointerdown', (event) => {
+  if (!selectionCard.hidden && !event.composedPath().includes(selectionCard)) closeSelectionCard();
+}, true);
+window.addEventListener('scroll', closeSelectionCard, { passive: true });
+window.addEventListener('resize', closeSelectionCard);
 selectionButton.addEventListener('pointerdown', (event) => event.preventDefault());
 selectionButton.addEventListener('click', async () => {
-  selectionButton.hidden = true;
   if (!selection || running || saving) return;
   const selected = selection;
+  closeSelectionCard();
   window.getSelection().removeAllRanges();
   if (!reanchoring) return editAnnotation(selected);
   const id = reanchoring;
@@ -1089,6 +1149,10 @@ byId('restore-file').addEventListener('change', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (!selectionCard.hidden && event.key === 'Escape') {
+    closeSelectionCard();
+    return;
+  }
   if (dialog.open && (event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault();
     byId('comment-form').requestSubmit();

@@ -56,7 +56,7 @@ def create_inputs(path):
     return original, revised, second, markdown, word_notes, txt_notes
 
 
-def select_text(page, quote, side="right"):
+def drag_text(page, quote, side="right"):
     paragraph = page.locator(f"#{side} p:visible, #{side} h1:visible").filter(has_text=quote).first
     paragraph.scroll_into_view_if_needed()
     x0, x1, y = paragraph.evaluate(
@@ -81,6 +81,10 @@ def select_text(page, quote, side="right"):
     page.mouse.move(x1, y, steps=10)
     page.mouse.up()
     expect(page.locator("#annotate")).to_be_visible()
+
+
+def select_text(page, quote, side="right"):
+    drag_text(page, quote, side)
     page.locator("#annotate").click()
 
 
@@ -132,6 +136,20 @@ def exercise(p, url, folder):
     import_round(page, revised, markdown, original)
     expect(page.locator("#change")).to_contain_text("原表述过于绝对")
     expect(page.locator("#change")).to_contain_text("自动匹配")
+    card = page.locator("#selection-card")
+    drag_text(page, "完全避免", "left")
+    expect(card).to_contain_text("原表述过于绝对")
+    expect(card).to_contain_text("高可信度")
+    expect(card.locator(".after")).to_contain_text("降低")
+    drag_text(page, "请阅最新的复核记录。")
+    expect(card).to_contain_text("此处没有已关联的修改说明")
+    expect(card).not_to_contain_text("原表述过于绝对")
+    page.keyboard.press("Escape")
+    expect(card).to_be_hidden()
+    drag_text(page, "降低")
+    expect(card.locator(".before")).to_contain_text("完全避免")
+    card.get_by_role("button", name="关闭修改理由").click()
+    expect(card).to_be_hidden()
     expect(page.locator("#right td[colspan='2']")).to_contain_text("以上结果")
     for side, tag, phrase, selected_bg, paragraph_class, whole_phrase, paragraph_bg in [
         ("left", "del", "完全避免", "rgb(246, 218, 218)", "not-in-edited", "待废弃说明。", "rgb(252, 232, 232)"),
@@ -162,6 +180,16 @@ def exercise(p, url, folder):
     expect(page.locator("#change")).to_contain_text("未关联修改说明")
     page.locator("#jump").select_option("0")
     expect(page.locator("#change")).to_contain_text("自动匹配")
+    note.get_by_role("button", name="关联到当前修改 1").click()
+    expect(page.locator("#change")).to_contain_text("此记录只有说明")
+    drag_text(page, "降低")
+    expect(card.locator("article")).to_have_count(2)
+    expect(card).to_contain_text("原表述过于绝对")
+    expect(card).to_contain_text("此记录只有说明")
+    expect(card).to_contain_text("人工匹配")
+    page.keyboard.press("Escape")
+    note.get_by_role("button", name="解除关联").click()
+    expect(page.locator("#change")).not_to_contain_text("此记录只有说明")
     page.locator("#change").get_by_role("button", name="解除关联").click()
     expect(page.locator("#change")).to_contain_text("未关联修改说明")
     page.reload()

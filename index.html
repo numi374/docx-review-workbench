@@ -65,7 +65,14 @@
       </aside>
     </section>
   </main>
-  <button id="annotate" class="primary selection" type="button" hidden>添加批注</button>
+  <section id="selection-card" role="region" aria-labelledby="selection-title" hidden>
+    <div class="selection-heading">
+      <h2 id="selection-title">修改理由</h2>
+      <button type="button" id="selection-close" aria-label="关闭修改理由">×</button>
+    </div>
+    <div id="selection-reasons"></div>
+    <footer><button id="annotate" type="button">添加批注</button></footer>
+  </section>
   <dialog id="comment-dialog">
     <form id="comment-form">
       <h2>人工批注</h2>
