@@ -4,7 +4,12 @@
 .doc[data-side="right"] :is(del, .not-in-edited, tr.rev-row-del, .rev-para-mark-del, .rev-del-marker, .rev-move-from-marker),
 .doc .merged-into-next { display: none !important; }
 .doc[data-side="left"] del { background: #f9d8db; color: #8a1929; text-decoration: line-through; }
-.doc[data-side="right"] ins { background: #d5f0dd; color: #145327; text-decoration: none; }
+.doc[data-side="right"] ins {
+  background: #bbf7d0;
+  color: #166534;
+  text-decoration: underline #15803d 2px;
+  text-underline-offset: .15em;
+}
 .doc :is(ins, del).change-as-formatting { background: #fbefce; color: inherit; text-decoration: none; }
 .doc :is(ins, del).change-common { background: inherit; color: inherit; text-decoration: none; }
 .doc .rev-format-marker::before { content: "◆"; color: #966900; }
