@@ -466,7 +466,8 @@ function receive(candidate) {
       engine.terminate();
       engine = newEngine();
       reject(new Error('文档引擎等待超时，可以重新比较'));
-    }, 45000);
+    // A fresh browser must download the WASM runtime on HTTPS deployments.
+    }, location.protocol === 'https:' ? 120_000 : 45_000);
     engine.onmessage = ({ data }) => {
       if (data.stage) return status(data.stage);
       clearTimeout(timeout);

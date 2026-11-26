@@ -96,7 +96,8 @@ def annotation(page, quote, comment, suggestion="", confirmed=False):
 
 
 def wait_status(page, text):
-    expect(page.locator("#status")).to_contain_text(text, timeout=60000)
+    timeout = 135000 if page.url.startswith("https://") else 60000
+    expect(page.locator("#status")).to_contain_text(text, timeout=timeout)
 
 
 def import_round(page, edited, notes=None, original=None, original_base=False):
