@@ -7,6 +7,8 @@ import { mapScrollTop, measureBlocks, pairOffsets } from './upstream/ui/scrollMa
 import { annotationEvidence, carryAnnotation, indexPositions, locateChange, positionLabel } from './contexts';
 import { noteDocumentText, parseNotes, assessNotes } from './notes.mjs';
 import { makeFeedback } from './feedback.mjs';
+import { createHoverReasons } from './hover-reasons';
+import { createReasonLibrary } from './reason-library';
 import {
   createProject, exportProject, getActive, getFile, getLegacy, getProject, listProjects, restoreProject,
   saveNewProject, saveRound, setActive, stageFile, wasMigrated,
@@ -25,8 +27,7 @@ const panels = Object.entries(sides).map(([side, label]) => {
   return { side, label, host, root: host.attachShadow({ mode: 'open' }) };
 });
 const dialog = byId('comment-dialog');
-const selectionCard = byId('selection-card');
-const selectionButton = byId('annotate');
+const modeButton = byId('annotation-mode');
 const newEngine = () => new Worker(new URL('./engine.worker.js', import.meta.url), { type: 'module' });
 let engine = newEngine();
 const appBaseUrl = new URL(import.meta.env.BASE_URL, location.href).href;
@@ -39,9 +40,10 @@ let positionsBySide = {};
 let records = [];
 let assessments = {};
 let index = -1;
-let selection = null;
 let selectionPin = null;
 let placementFrame = 0;
+let annotationMode = false;
+let selectionPanel = null;
 let editing = null;
 let running = false;
 let saving = false;
@@ -94,7 +96,11 @@ function mountDocument(panel, source) {
   const styles = dom('style', source.css + '\n' + panelCss);
   panel.root.replaceChildren(styles, sheet);
   panel.observer?.disconnect();
-  panel.observer = new ResizeObserver(() => anchorPairs.clear());
+  panel.observer = new ResizeObserver(() => {
+    anchorPairs.clear();
+    hoverReasons.reposition();
+    scheduleSelectionPlacement();
+  });
   panel.observer.observe(sheet);
 }
 
@@ -146,79 +152,104 @@ function linkedNotes(changeId) {
   return changeId ? records.filter((note) => linkFor(note).ids.includes(changeId)) : [];
 }
 
-function closeSelectionCard() {
-  selectionCard.hidden = true;
-  selection = null;
-  selectionPin = null;
-  cancelAnimationFrame(placementFrame);
-  placementFrame = 0;
+const reasonLibrary = createReasonLibrary(byId, action);
+const hoverReasons = createHoverReasons(byId('hover-reasons'), panels, renderHoverReasons);
+
+function setAnnotationMode(active) {
+  annotationMode = active;
+  modeButton.setAttribute('aria-pressed', String(active));
+  byId('workspace').classList.toggle('annotation-mode', active);
+  if (active) window.getSelection()?.removeAllRanges();
+  hoverReasons.enable(!active && !reanchoring);
+  if (!active && selectionPin && !reanchoring && !saving) dialog.close();
 }
 
-function showSelectionCard(model, pin) {
-  selection = model;
-  selectionPin = pin;
-  const side = positionsBySide[model.side];
-  const targets = new Set();
-  const anchors = new Set();
+function renderHoverReasons(block) {
+  if (!current || running || dialog.open || !records.length) return false;
+  const side = block.getRootNode().host.id;
+  const anchor = block.dataset.anchor;
+  const data = positionsBySide[side];
+  const position = data.positions.get(anchor);
+  if (!position) return false;
+  const ids = new Set(changes.filter((change) => change.anchors.includes(anchor)).map((change) => change.id));
+  for (const span of data.spansByEntry[data.entries.indexOf(position)] ?? []) ids.add(span.id);
+  const reasons = new Map();
+  for (const [i, note] of records.entries()) {
+    const result = assessments[note.id];
+    const link = linkFor(note);
+    const linked = link.ids.some((id) => ids.has(id));
+    const candidate = !link.manual && !link.id && ['medium', 'low'].includes(result.confidence) &&
+      result.candidates.some((group) => group.some((id) => ids.has(id)));
+    if (!linked && !candidate) continue;
+    const reason = note.reason.trim() || '该记录未提供修改理由。';
+    const key = reason.replace(/\s+/gu, ' ');
+    if (!reasons.has(key)) {
+      const section = dom('article');
+      section.append(dom('p', reason, 'hover-reason'));
+      reasons.set(key, section);
+    }
+    const fields = [];
+    if (note.before) fields.push(dom('div', '原文　' + note.before, 'change-text before'));
+    if (note.after) fields.push(dom('div', '二校稿　' + note.after, 'change-text after'));
+    if (note.location) fields.push(dom('p', '位置　' + note.location, 'block-meta'));
+    if (note.context) fields.push(dom('p', '上下文　' + note.context, 'block-meta'));
+    if (note.suggestion && note.suggestion !== note.reason) fields.push(dom('p', '建议　' + note.suggestion, 'change-text'));
+    if (!fields.length && !note.reason && note.raw) fields.push(dom('pre', note.raw, 'change-text'));
+    const entry = dom(fields.length ? 'details' : 'div', undefined, 'hover-record');
+    const confidence = confidenceLabel[result.confidence];
+    const label = candidate ? '候选 · ' + confidence : link.manual
+      ? '人工确认' + (result.confidence === 'none' ? '' : ' · 原匹配' + confidence)
+      : link.label + ' · ' + confidence;
+    const summary = dom(fields.length ? 'summary' : 'div', noteTitle(note, i));
+    summary.append(dom('span', label, 'badge' + (linked ? ' linked' : '')));
+    entry.append(summary, ...fields);
+    reasons.get(key).append(entry);
+  }
+  byId('hover-records').replaceChildren(...reasons.values());
+  return reasons.size > 0;
+}
+
+function retainSelectedChanges(model) {
+  const data = positionsBySide[model.side];
+  const ids = new Set();
   for (const part of model.parts ?? [model]) {
-    const position = side.positions.get(part.anchor);
-    if (position) anchors.add(part.anchor);
-    const spans = side.spansByEntry[side.entries.indexOf(position)] ?? [];
-    for (const span of spans) if (span.start < part.end && span.end > part.start) targets.add(span.id);
-    if (part.changeId) targets.add(part.changeId);
+    const position = data.positions.get(part.anchor);
+    const spans = data.spansByEntry[data.entries.indexOf(position)] ?? [];
+    for (const span of spans) if (span.start < part.end && span.end > part.start) ids.add(span.id);
+    if (part.changeId) ids.add(part.changeId);
   }
-  const paragraphScope = !targets.size && anchors.size > 0;
-  if (paragraphScope) {
-    for (const change of changes) if (change.anchors.some((anchor) => anchors.has(anchor))) targets.add(change.id);
-  }
-  if (model.parts) model.changeIds = [...targets];
-  const notes = records.filter((note) => linkFor(note).ids.some((id) => targets.has(id)));
-  const body = byId('selection-reasons');
-  body.replaceChildren();
-  byId('selection-title').textContent = model.parts ? `所选 ${model.parts.length} 段的修改理由`
-    : paragraphScope && targets.size ? '本段修改理由' : '修改理由';
-  for (const note of notes) {
-    const section = dom('article');
-    section.append(dom('p', note.reason || '该记录未提供修改理由。'));
-    body.append(section);
-  }
-  if (!notes.length) body.append(dom('p', current.notes ? '此处没有已关联的修改说明。' : '本轮尚未导入修改说明。', 'muted'));
-  body.scrollTop = 0;
-  placeSelectionCard();
+  if (model.parts || ids.size > 1) model.changeIds = [...ids];
+  return model;
 }
 
 function scheduleSelectionPlacement() {
   if (!selectionPin || placementFrame) return;
   placementFrame = requestAnimationFrame(() => {
     placementFrame = 0;
-    placeSelectionCard();
+    placeSelectionEditor();
   });
 }
 
-function placeSelectionCard() {
+function placeSelectionEditor() {
   if (!selectionPin) return;
   const rect = selectionPin.getBoundingClientRect();
-  const host = byId(selection.side).getBoundingClientRect();
-  selectionCard.style.maxHeight = '';
-  selectionCard.hidden = false;
+  const host = byId(editing.side).getBoundingClientRect();
   const gap = 8;
   const width = document.documentElement.clientWidth;
   const height = document.documentElement.clientHeight;
-  const topEdge = Math.min(height, Math.max(0, host.top));
-  const bottomEdge = Math.max(topEdge, Math.min(height, host.bottom));
-  const top = Math.min(bottomEdge, Math.max(topEdge, rect.top));
-  const bottom = Math.min(bottomEdge, Math.max(topEdge, rect.bottom));
+  const upper = Math.min(height, Math.max(0, host.top));
+  const lower = Math.max(upper, Math.min(height, host.bottom));
+  const top = Math.min(lower, Math.max(upper, rect.top));
+  const bottom = Math.min(lower, Math.max(upper, rect.bottom));
+  const card = dialog.getBoundingClientRect();
   const below = height - bottom - 2 * gap;
   const above = top - 2 * gap;
-  const card = selectionCard.getBoundingClientRect();
-  const useBelow = card.height <= below || (above < card.height && below >= above);
-  const available = useBelow ? below : above;
-  // A selection taller than the viewport can leave neither side usable.
-  if (available < card.height && available >= 128) selectionCard.style.maxHeight = available + 'px';
-  const h = selectionCard.offsetHeight;
-  selectionCard.style.left = Math.max(gap, Math.min(rect.left, width - card.width - gap)) + 'px';
-  selectionCard.style.top = Math.max(gap, Math.min(useBelow ? bottom + gap : top - h - gap, height - h - gap)) + 'px';
+  const y = card.height <= below || below >= above ? bottom + gap : top - card.height - gap;
+  dialog.style.left = Math.max(gap, Math.min(rect.left, width - card.width - gap)) + 'px';
+  dialog.style.top = Math.max(gap, Math.min(y, height - card.height - gap)) + 'px';
 }
+
+new ResizeObserver(scheduleSelectionPlacement).observe(dialog);
 
 function noteTitle(note, i) {
   return [note.number ? '记录 ' + note.number : '说明 ' + (i + 1), note.title].filter(Boolean).join(' · ');
@@ -382,6 +413,7 @@ function renderNotes() {
 async function changeLink(noteId, changeId) {
   if (await persistRound({ noteOverrides: { ...current.noteOverrides, [noteId]: changeId } },
     changeId ? '已保存人工关联' : '已解除关联')) {
+    hoverReasons.close();
     paintAnnotations();
     if (index >= 0) go(index, false);
     else renderNotes();
@@ -465,7 +497,7 @@ function paintAnnotations() {
   const filter = byId('comment-filter').value;
   const visible = placed.filter(({ annotation, range }) =>
     filter === 'all' || (filter === 'locate' ? !range : annotation.status === filter));
-  if (!visible.length) list.textContent = placed.length ? '此筛选条件下没有批注。' : '在任一栏选中文字后添加批注。';
+  if (!visible.length) list.textContent = placed.length ? '此筛选条件下没有批注。' : '开启批注模式后，在任一栏拖选文字添加批注。';
   for (const { annotation, panel, range } of visible) {
     const row = dom('div', undefined, 'item');
     const state = annotation.status === 'confirmed' ? '已确认' : '待处理';
@@ -516,16 +548,13 @@ function locateAndLink(annotation, panel, range) {
 }
 
 function startReanchor(id) {
+  if (reanchoring && id !== reanchoring && selectionPin && editing?.id === reanchoring) dialog.close();
   reanchoring = id;
+  hoverReasons.enable(!annotationMode && !id);
   const hint = byId('reanchor-hint');
-  hint.hidden = false;
-  selectionButton.textContent = '将批注定位到此处';
+  hint.hidden = !id;
   hint.replaceChildren(dom('span', '请在本轮文档中选取对应文字。'),
     action('取消定位', () => startReanchor(null)));
-  if (id === null) {
-    hint.hidden = true;
-    selectionButton.textContent = '添加批注';
-  }
 }
 
 function updateDetails(result, notesText) {
@@ -659,7 +688,7 @@ async function displayRound(nextProject, nextRound, files, commit, previousRound
   index = changes.length ? 0 : -1;
   anchorPairs.clear();
   startReanchor(null);
-  closeSelectionCard();
+  hoverReasons.close();
   byId('left-role').textContent = current.baseRoundId ? '基准稿' : '原文';
   byId('left-name').textContent = current.base.name;
   byId('right-name').textContent = current.revised.name;
@@ -682,6 +711,8 @@ async function displayRound(nextProject, nextRound, files, commit, previousRound
 
 async function run(message, task) {
   if (running || saving) return;
+  hoverReasons.close();
+  if (dialog.open) dialog.close();
   running = true;
   updateProjectSummary();
   try {
@@ -722,15 +753,28 @@ async function saveAnnotations(annotations, counter = current.nextAnnotationNumb
   return true;
 }
 
-function editAnnotation(annotation) {
+function editAnnotation(annotation, pin = null) {
   if (running || saving) return;
+  hoverReasons.close();
   editing = annotation;
+  selectionPin = pin;
+  reasonLibrary.reset();
   byId('quote').textContent = annotation.quote;
   byId('comment-text').value = annotation.comment ?? '';
   byId('comment-suggestion').value = annotation.suggestion ?? '';
   byId('comment-status').value = annotation.status ?? 'pending';
-  dialog.showModal();
-  byId('comment-text').focus();
+  dialog.classList.toggle('document-popover', Boolean(pin));
+  dialog.classList.toggle('anchored-editor', Boolean(pin));
+  if (!pin) {
+    dialog.style.removeProperty('left');
+    dialog.style.removeProperty('top');
+  }
+  if (!dialog.open) {
+    if (pin) dialog.show();
+    else dialog.showModal();
+  }
+  if (pin) placeSelectionEditor();
+  byId('comment-text').focus({ preventScroll: true });
 }
 
 async function refreshProjects() {
@@ -738,6 +782,7 @@ async function refreshProjects() {
   byId('project-select').replaceChildren(new Option('选择项目', ''),
     ...projects.map((item) => new Option(item.name, item.id)));
   byId('project-select').value = project?.id ?? '';
+  await reasonLibrary.importProjects(projects);
 }
 
 function setImportMode(mode) {
@@ -774,24 +819,15 @@ async function openProject(id, roundId) {
 for (const panel of panels) {
   const other = panels.find((entry) => entry !== panel);
   panel.host.addEventListener('scroll', () => {
-    if (selection?.side === panel.side) scheduleSelectionPlacement();
+    if (selectionPin && editing?.side === panel.side) scheduleSelectionPlacement();
     const ignored = scrollExpected.get(panel.host);
     scrollExpected.delete(panel.host);
     if (byId('sync').checked && (ignored === undefined || Math.abs(ignored - panel.host.scrollTop) > 1)) {
       syncPanel(panel, other);
     }
   }, { passive: true });
-  panel.root.addEventListener('pointerup', () => {
-    if (running || saving || !current) return;
-    const anchor = captureAnchor(panel.root, panel.side);
-    if (!anchor) {
-      closeSelectionCard();
-      return;
-    }
-    showSelectionCard(anchor.model, anchor.pin);
-  });
   panel.root.addEventListener('click', (event) => {
-    if (window.getSelection().toString()) return;
+    if (dialog.open || window.getSelection().toString()) return;
     const note = placed.find((item) => item.panel === panel && item.range &&
       [...item.range.getClientRects()].some((rect) => event.clientX >= rect.left && event.clientX <= rect.right &&
         event.clientY >= rect.top && event.clientY <= rect.bottom));
@@ -799,38 +835,46 @@ for (const panel of panels) {
   });
 }
 
-byId('selection-close').addEventListener('click', closeSelectionCard);
-document.addEventListener('click', (event) => {
-  const path = event.composedPath();
-  if (!selectionCard.hidden && !path.includes(selectionCard) && !panels.some(({ host }) => path.includes(host))) {
-    closeSelectionCard();
-  }
+modeButton.addEventListener('click', () => setAnnotationMode(!annotationMode));
+document.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || (!annotationMode && !reanchoring)) return;
+  selectionPanel = panels.find(({ host }) => event.composedPath().includes(host)) ?? null;
 }, true);
+document.addEventListener('pointercancel', () => { selectionPanel = null; }, true);
+document.addEventListener('pointerup', (event) => {
+  const panel = selectionPanel;
+  selectionPanel = null;
+  if (event.button !== 0 || !panel || running || saving || !current || (!annotationMode && !reanchoring)) return;
+  const selection = captureAnchor(panel.root, panel.side);
+  if (!selection) return;
+  const selected = retainSelectedChanges(selection.model);
+  if (!reanchoring) return editAnnotation(selected, selection.pin);
+  const previous = current.annotations.find((note) => note.id === reanchoring);
+  if (previous) editAnnotation({
+    ...previous, parts: undefined, changeIds: undefined, ...selected, needsLocation: false,
+    fileHash: selected.side === 'left' ? current.base.hash : current.revised.hash,
+    evidence: annotationEvidence(selected, changes, positionsBySide),
+  }, selection.pin);
+});
 window.addEventListener('scroll', scheduleSelectionPlacement, { passive: true });
 window.addEventListener('resize', scheduleSelectionPlacement);
-selectionButton.addEventListener('pointerdown', (event) => event.preventDefault());
-selectionButton.addEventListener('click', async () => {
-  if (!selection || running || saving) return;
-  const selected = selection;
-  closeSelectionCard();
-  window.getSelection().removeAllRanges();
-  if (!reanchoring) return editAnnotation(selected);
-  const id = reanchoring;
-  const annotations = current.annotations.map((note) => note.id === id
-    ? { ...note, parts: undefined, changeIds: undefined, ...selected, needsLocation: false,
-      fileHash: selected.side === 'left' ? current.base.hash : current.revised.hash,
-      evidence: annotationEvidence(selected, changes, positionsBySide),
-      reasonAtReview: reasonFor(selected) }
-    : note);
-  if (await saveAnnotations(annotations)) startReanchor(null);
+dialog.addEventListener('close', () => {
+  if (dialog.open) return;
+  editing = null;
+  selectionPin = null;
+  cancelAnimationFrame(placementFrame);
+  placementFrame = 0;
+  dialog.classList.remove('document-popover', 'anchored-editor');
+  dialog.style.removeProperty('left');
+  dialog.style.removeProperty('top');
 });
 byId('cancel').addEventListener('click', () => dialog.close());
 byId('comment-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const comment = byId('comment-text').value.trim();
-  if (!comment || !editing || running) return;
-  const button = event.submitter;
-  if (button) button.disabled = true;
+  if (!comment || !editing || running || saving) return;
+  const button = byId('comment-save');
+  button.disabled = true;
   const annotation = {
     ...editing, id: editing.id ?? crypto.randomUUID(), createdAt: editing.createdAt ?? new Date().toISOString(),
     number: editing.number ?? nextNumber(current, current.nextAnnotationNumber),
@@ -842,9 +886,13 @@ byId('comment-form').addEventListener('submit', async (event) => {
   const notes = editing.id ? current.annotations.map((item) => item.id === annotation.id ? annotation : item) :
     [...current.annotations, annotation];
   try {
-    if (await saveAnnotations(notes, current.nextAnnotationNumber + (editing.id ? 0 : 1))) dialog.close();
+    if (await saveAnnotations(notes, current.nextAnnotationNumber + (editing.id ? 0 : 1))) {
+      dialog.close();
+      if (annotation.id === reanchoring) startReanchor(null);
+      if (!await reasonLibrary.remember(comment)) status('批注已保存，理由库暂未更新。', true);
+    }
   } finally {
-    if (button) button.disabled = false;
+    button.disabled = false;
   }
 });
 byId('import').addEventListener('submit', async (event) => {
@@ -1165,13 +1213,21 @@ byId('restore-file').addEventListener('change', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (!selectionCard.hidden && event.key === 'Escape') {
-    closeSelectionCard();
+  if (event.isComposing || event.defaultPrevented) return;
+  if (event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey && event.code === 'KeyM') {
+    if (event.target.closest('input, textarea, select, [contenteditable]') || document.querySelector('dialog[open]:modal')) return;
+    event.preventDefault();
+    if (!event.repeat) setAnnotationMode(!annotationMode);
     return;
   }
-  if (dialog.open && (event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+  if (dialog.open && event.key === 'Escape' && selectionPin) {
     event.preventDefault();
-    byId('comment-form').requestSubmit();
+    if (!saving) dialog.close();
+    return;
+  }
+  if (dialog.open && dialog.contains(event.target) && (event.ctrlKey || event.metaKey) && !event.altKey && event.key === 'Enter') {
+    event.preventDefault();
+    if (!event.repeat && !byId('comment-save').disabled) byId('comment-form').requestSubmit();
   }
   if (!document.querySelector('dialog[open]') && event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
     event.preventDefault();

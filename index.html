@@ -34,6 +34,7 @@
       <label><input type="checkbox" id="sync" checked>同步滚动</label>
       <label class="width-label">栏宽<input type="range" id="width" min="30" max="70" value="50"></label>
       <button id="new-round" type="button" disabled>导入新轮次</button>
+      <button id="annotation-mode" type="button" aria-pressed="false" title="Ctrl + Alt + M">批注模式</button>
       <button id="toggle" type="button" aria-controls="details" aria-expanded="false">显示修改记录</button>
     </nav>
     <section id="workspace" class="workspace closed">
@@ -60,27 +61,36 @@
             </select>
           </div>
           <p id="reanchor-hint" hidden></p>
-          <div id="comments">在任一栏选中文字后添加批注。</div>
+          <div id="comments">开启批注模式后，在任一栏拖选文字添加批注。</div>
         </section>
       </aside>
     </section>
   </main>
-  <section id="selection-card" role="region" aria-labelledby="selection-title" hidden>
-    <div class="selection-heading">
-      <h2 id="selection-title">修改理由</h2>
-      <button type="button" id="selection-close" aria-label="关闭修改理由">×</button>
-    </div>
-    <div id="selection-reasons"></div>
-    <footer><button id="annotate" type="button">添加批注</button></footer>
+  <section id="hover-reasons" class="document-popover" aria-labelledby="hover-title" hidden>
+    <h2 id="hover-title">本段修改理由</h2>
+    <div id="hover-records"></div>
   </section>
-  <dialog id="comment-dialog">
+  <dialog id="comment-dialog" aria-labelledby="comment-title">
     <form id="comment-form">
-      <h2>人工批注</h2>
+      <h2 id="comment-title">人工批注</h2>
       <blockquote id="quote"></blockquote>
+      <section id="reason-library" aria-label="批注理由库">
+        <div class="reason-toolbar">
+          <input id="reason-search" type="search" aria-label="搜索批注理由" placeholder="搜索常用与历史理由">
+          <button type="button" id="reason-manage" aria-pressed="false">管理理由</button>
+        </div>
+        <div id="reason-options"></div>
+        <div id="reason-editor" class="reason-toolbar" hidden>
+          <input id="reason-value" type="text" maxlength="3000" aria-label="自定义理由" placeholder="自定义理由">
+          <button type="button" id="reason-store">添加理由</button>
+          <button type="button" id="reason-cancel" hidden>取消编辑</button>
+        </div>
+        <small id="reason-status" role="status" hidden></small>
+      </section>
       <label>批注内容<textarea id="comment-text" rows="4" maxlength="3000" required></textarea></label>
       <label>建议处理方式（可选）<textarea id="comment-suggestion" rows="2" maxlength="1500"></textarea></label>
       <label>处理状态<select id="comment-status"><option value="pending">待处理</option><option value="confirmed">已确认，无须修改</option></select></label>
-      <div class="actions"><button type="button" id="cancel">取消</button><button class="primary">保存批注</button></div>
+      <div class="actions"><button type="button" id="cancel">取消</button><button id="comment-save" class="primary">保存批注</button></div>
     </form>
   </dialog>
   <dialog id="notes-preview" aria-labelledby="notes-preview-title" class="wide-dialog">

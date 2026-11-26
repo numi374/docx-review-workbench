@@ -1,4 +1,4 @@
-import { createStore, get, getMany, keys, set, setMany } from 'idb-keyval';
+import { createStore, get, getMany, keys, set, setMany, update } from 'idb-keyval';
 import { strFromU8, strToU8, unzip, zip } from 'fflate';
 
 const store = createStore('docx-review-engine-prototype', 'review');
@@ -42,6 +42,12 @@ export const getActive = () => get('active', store);
 export const setActive = (projectId, roundId) => set('active', { projectId, roundId }, store);
 export const getLegacy = () => get('current', store);
 export const wasMigrated = () => get('legacy-migrated', store);
+
+export async function updateReasonLibrary(edit) {
+  let library;
+  await update('annotation-reasons', (existing) => library = edit(existing), store);
+  return library;
+}
 
 export function createProject(name, original, round) {
   const now = new Date().toISOString();

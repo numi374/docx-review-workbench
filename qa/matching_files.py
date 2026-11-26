@@ -144,6 +144,18 @@ def run(url,folder,inspect):
             if not inspect:
                 for (confidence, targets), goal in zip(actual,expected):
                     assert targets == GOLD.get(goal,""), (file.name, goal, confidence, targets)
+            if file.name == "重复句.md":
+                page.locator("#preview-apply").click()
+                wait_status(page, "已导入修改说明")
+                paragraphs = page.locator("#right p[data-anchor]:visible")
+                first = next(i for i, text in enumerate(paragraphs.all_inner_texts()) if text.strip() == "复核期限为五天。")
+                paragraphs.nth(first).hover()
+                card = page.locator("#hover-reasons")
+                expect(card).to_be_visible()
+                expect(card).to_contain_text("调整时限")
+                expect(card).to_contain_text("候选 · 中可信度")
+                expect(card).not_to_contain_text("高可信度")
+                continue
             page.locator("#preview-cancel").click()
             wait_status(page,"已取消导入")
             expect(page.locator("#compare")).to_be_enabled()
