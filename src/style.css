@@ -1,4 +1,8 @@
 :root {
+  --change-added: #e5f3e9;
+  --change-removed: #fce8e8;
+  --change-added-active: #d4eadb;
+  --change-removed-active: #f6dada;
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   color: #182334;
   background: #edf1f5;
@@ -60,8 +64,8 @@ aside h2, summary { margin-bottom: .5rem; font-weight: 650; }
 summary { cursor: pointer; }
 pre, .change-text { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; margin: .3rem 0; }
 .change-text { padding: .35rem .45rem; background: #f2f5f8; border-radius: 4px; }
-.change-text.before { background: #fce7e7; }
-.change-text.after { background: #e5f5ea; }
+.change-text.before { background: var(--change-removed); }
+.change-text.after { background: var(--change-added); }
 .item { padding: .55rem 0; border-top: 1px solid #eef0f3; overflow-wrap: anywhere; }
 .item button { margin: .35rem .25rem 0 0; font-size: .86rem; }
 .section-heading, .dialog-header { display: flex; justify-content: space-between; align-items: center; gap: .6rem; }

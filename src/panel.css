@@ -1,22 +1,63 @@
-.doc { padding: 1.15rem; min-height: 100%; overflow-wrap: anywhere; }
+.doc {
+  --reading-font: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", IPAexMincho, "MS Mincho", serif;
+  padding: 1.15rem;
+  min-height: 100%;
+  overflow-wrap: anywhere;
+  background-color: #fdfbf7;
+  color: #25231f;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.75;
+  letter-spacing: .02em;
+}
+
+/* Word run styles can set their own font family and point size. */
+.doc, .doc :where(*) { font-family: var(--reading-font) !important; }
+.doc :is(p, li, td, th) {
+  font-size: 18px !important;
+  line-height: 1.75 !important;
+  letter-spacing: .02em !important;
+}
+.doc :is(p, li, td, th) :where(span, ins, del, a, strong, em, b, i) {
+  font-size: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit !important;
+}
+
 .doc img { max-width: 100%; height: auto; }
 .doc[data-side="left"] :is(ins, .not-in-original, tr.rev-row-ins, .rev-ins-marker),
 .doc[data-side="right"] :is(del, .not-in-edited, tr.rev-row-del, .rev-para-mark-del, .rev-del-marker, .rev-move-from-marker),
 .doc .merged-into-next { display: none !important; }
-.doc[data-side="left"] del { background: #f9d8db; color: #8a1929; text-decoration: line-through; }
-.doc[data-side="right"] ins {
-  background: #bbf7d0;
-  color: #166534;
-  text-decoration: underline #15803d 2px;
-  text-underline-offset: .15em;
+
+/* Neutralize the converter's revision decoration while keeping Word's ordinary text styles. */
+.doc[data-side] :is(ins, del) {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 0;
+  box-shadow: none;
 }
-.doc :is(ins, del).change-as-formatting { background: #fbefce; color: inherit; text-decoration: none; }
-.doc :is(ins, del).change-common { background: inherit; color: inherit; text-decoration: none; }
+.doc[data-side="left"] del,
+.doc[data-side="left"] :is(.not-in-edited[data-anchor], tr.rev-row-del) { background-color: var(--change-removed); }
+.doc[data-side="right"] ins,
+.doc[data-side="right"] :is(.not-in-original[data-anchor], tr.rev-row-ins) { background-color: var(--change-added); }
+
+.doc[data-side="left"] del.selected { background-color: var(--change-removed-active); }
+.doc[data-side="right"] ins.selected { background-color: var(--change-added-active); }
+.doc[data-side] :is(ins, del).change-as-formatting { background-color: #fbefce; }
+.doc[data-side] :is(ins, del).change-common { background-color: transparent; }
+
 .doc .rev-format-marker::before { content: "◆"; color: #966900; }
-.doc :is(.rev-para-ins, .rev-para-del)[data-change-id] { border-inline-start: 2px solid #d7a33c; }
-.doc[data-side="right"] :is(.not-in-original[data-anchor], tr.rev-row-ins) { background-color: #e2fbe9; }
-.doc[data-side="right"] .rev-para-ins[data-change-id] { border-inline-start-color: #15803d; }
+/* Paragraph mark revisions tint the edge only. Unchanged words in the paragraph stay unmarked. */
+.doc[data-side="left"] .rev-para-del[data-change-id],
+.doc[data-side="right"] .rev-para-ins[data-change-id] {
+  background-image: linear-gradient(var(--paragraph-change), var(--paragraph-change));
+  background-position: left top;
+  background-repeat: no-repeat;
+  background-size: 3px 100%;
+}
+.doc[data-side="left"] .rev-para-del[data-change-id] { --paragraph-change: var(--change-removed-active); }
+.doc[data-side="right"] .rev-para-ins[data-change-id] { --paragraph-change: var(--change-added-active); }
 .doc .deletion-context { outline: 2px dashed #54718e; outline-offset: 1px; }
 .doc [data-change-id] { cursor: pointer; }
-.doc [data-change-id].selected { outline: 2px solid #315e9b; outline-offset: 1px; }
+.doc [data-change-id].selected:not(ins, del) { outline: 2px solid #315e9b; outline-offset: 1px; }
 ::highlight(review-annotations) { background-color: #ffdd79; color: #382900; text-decoration: underline; }
