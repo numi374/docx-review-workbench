@@ -1,0 +1,5 @@
+node_modules/
+dist/
+public/wasm/
+__pycache__/
+*.docx

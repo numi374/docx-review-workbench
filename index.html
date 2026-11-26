@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src data: blob:; font-src 'self' data:; worker-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>DOCX 校对工作台</title>
+</head>
+<body>
+  <header class="top">
+    <div><h1>DOCX 校对工作台</h1><p id="project-summary">在本机导入文件，开始校对</p></div>
+    <div class="top-controls">
+      <label class="project-picker">项目 <select id="project-select"><option value="">选择项目</option></select></label>
+      <button id="new-project" type="button">新建项目</button>
+      <button id="history" type="button" disabled>历史版本</button>
+      <button id="feedback" type="button" class="primary" disabled>生成反馈</button>
+      <output id="status" role="status">请选择两份 DOCX</output>
+    </div>
+  </header>
+  <main>
+    <form class="import" id="import">
+      <label id="project-name-field">项目名称<input id="project-name" type="text" maxlength="150" placeholder="默认使用原文文件名"></label>
+      <label id="original-field">原始文档<input id="left-file" type="file" accept=".docx" required></label>
+      <label id="base-field" hidden>对比基准<select id="base-select"></select></label>
+      <label>二校文档<input id="right-file" type="file" accept=".docx" required></label>
+      <label>修改说明（可选）<input id="notes-file" type="file" accept=".docx,.md,.txt"></label>
+      <button type="submit" id="compare" class="primary">创建项目</button>
+      <button type="button" id="cancel-import" hidden>取消</button>
+      <button type="button" id="restore-empty">恢复备份</button>
+    </form>
+    <nav aria-label="修改导航" class="navigation">
+      <button id="prev" disabled>上一处</button><button id="next" disabled>下一处</button>
+      <label class="jump-label">跳转 <select id="jump" disabled><option>暂无修改</option></select></label>
+      <label><input type="checkbox" id="sync" checked>同步滚动</label>
+      <label class="width-label">栏宽<input type="range" id="width" min="30" max="70" value="50"></label>
+      <button id="new-round" type="button" disabled>导入新轮次</button>
+      <button id="toggle" type="button" aria-expanded="true">隐藏详情</button>
+    </nav>
+    <section id="workspace" class="workspace">
+      <section id="columns" class="columns" aria-label="文档对比">
+        <section class="sheet"><h2><span id="left-role">原文</span> <small id="left-name"></small></h2><div id="left" class="document"></div></section>
+        <section class="sheet"><h2>二校稿 <small id="right-name"></small></h2><div id="right" class="document"></div></section>
+      </section>
+      <aside id="details" aria-label="复核详情">
+        <section><h2>当前修改</h2><div id="change">比较后可点击高亮或使用修改导航。</div></section>
+        <details id="notes-details">
+          <summary>修改说明</summary>
+          <label class="filter">显示 <select id="note-filter"><option value="all">全部记录</option><option value="review">待人工确认</option><option value="linked">已匹配</option><option value="unmatched">未匹配</option></select></label>
+          <button id="notes-update" type="button" disabled>导入本轮说明</button>
+          <input id="notes-update-file" type="file" accept=".docx,.md,.txt" hidden>
+          <div id="note-list"></div>
+          <details><summary>查看说明全文</summary><pre id="notes">尚未导入。</pre></details>
+        </details>
+        <details><summary id="word-count">原有 Word 评论</summary><div id="word-comments"></div></details>
+        <section>
+          <div class="section-heading"><h2 id="comment-count">人工批注</h2>
+            <select id="comment-filter" aria-label="筛选人工批注">
+              <option value="all">全部批注</option><option value="pending">待处理</option>
+              <option value="confirmed">已确认</option><option value="locate">待重新定位</option>
+            </select>
+          </div>
+          <p id="reanchor-hint" hidden></p>
+          <div id="comments">在任一栏选中文字后添加批注。</div>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <button id="annotate" class="primary selection" type="button" hidden>添加批注</button>
+  <dialog id="comment-dialog">
+    <form id="comment-form">
+      <h2>人工批注</h2>
+      <blockquote id="quote"></blockquote>
+      <label>批注内容<textarea id="comment-text" rows="4" maxlength="3000" required></textarea></label>
+      <label>建议处理方式（可选）<textarea id="comment-suggestion" rows="2" maxlength="1500"></textarea></label>
+      <label>处理状态<select id="comment-status"><option value="pending">待处理</option><option value="confirmed">已确认，无须修改</option></select></label>
+      <div class="actions"><button type="button" id="cancel">取消</button><button class="primary">保存批注</button></div>
+    </form>
+  </dialog>
+  <dialog id="notes-preview" aria-labelledby="notes-preview-title" class="wide-dialog">
+    <h2 id="notes-preview-title">修改说明导入预览</h2>
+    <p id="preview-summary"></p>
+    <div id="preview-records"></div>
+    <div class="actions"><button type="button" id="preview-cancel">取消导入</button><button type="button" id="preview-apply" class="primary">应用修改说明</button></div>
+  </dialog>
+  <dialog id="feedback-dialog" class="wide-dialog">
+    <div class="dialog-header"><h2 id="feedback-title">生成反馈</h2><button id="feedback-close" type="button">关闭</button></div>
+    <div id="feedback-options">
+      <label><input id="include-confirmed" type="checkbox">显示已确认批注</label>
+      <div id="feedback-list" class="feedback-list"></div>
+    </div>
+    <label class="feedback-preview">Markdown 预览<textarea id="feedback-preview" readonly></textarea></label>
+    <div class="actions">
+      <button id="feedback-save" type="button">保存到本轮</button>
+      <button id="feedback-export" type="button">导出 Markdown</button>
+      <button id="feedback-copy" type="button" class="primary">复制全部反馈</button>
+    </div>
+    <output id="feedback-status" role="status"></output>
+  </dialog>
+  <dialog id="history-dialog" class="wide-dialog">
+    <div class="dialog-header"><h2>历史版本</h2><button id="history-close" type="button">关闭</button></div>
+    <div id="round-list"></div>
+    <div class="actions"><button id="backup" type="button">备份当前项目</button><button id="restore" type="button">恢复备份</button></div>
+  </dialog>
+  <input id="restore-file" type="file" accept=".zip,application/zip" hidden>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>
