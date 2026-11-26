@@ -65,6 +65,5 @@
 .doc[data-side="left"] .rev-para-del[data-change-id] { --paragraph-change: var(--change-removed-active); }
 .doc[data-side="right"] .rev-para-ins[data-change-id] { --paragraph-change: var(--change-added-active); }
 .doc .deletion-context { outline: 2px dashed #54718e; outline-offset: 1px; }
-.doc [data-change-id] { cursor: pointer; }
 .doc [data-change-id].selected:not(ins, del) { outline: 2px solid #315e9b; outline-offset: 1px; }
 ::highlight(review-annotations) { background-color: #ffdd79; color: #382900; text-decoration: underline; }

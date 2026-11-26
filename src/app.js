@@ -795,12 +795,7 @@ for (const panel of panels) {
     const note = placed.find((item) => item.panel === panel && item.range &&
       [...item.range.getClientRects()].some((rect) => event.clientX >= rect.left && event.clientX <= rect.right &&
         event.clientY >= rect.top && event.clientY <= rect.bottom));
-    if (note) {
-      editAnnotation(note.annotation);
-      return;
-    }
-    const hit = event.target.closest('[data-change-id]');
-    if (hit) go(changes.findIndex((item) => item.id === hit.dataset.changeId));
+    if (note) editAnnotation(note.annotation);
   });
 }
 

@@ -147,7 +147,16 @@ def exercise(p, url, folder):
     page.locator("#next").click()
     expect(page.locator("#jump")).to_have_value("1")
     expect(details).to_be_hidden()
-    page.locator("#left del[data-change-id]:visible").filter(has_text="完全避免").click()
+    for side, tag, phrase in [("left", "del", "完全避免"), ("right", "ins", "降低")]:
+        mark = page.locator(f"#{side} {tag}[data-change-id]:visible").filter(has_text=phrase)
+        mark.scroll_into_view_if_needed()
+        host = page.locator("#" + side)
+        offset = host.evaluate("(el) => el.scrollTop")
+        mark.click()
+        expect(page.locator("#jump")).to_have_value("1")
+        assert host.evaluate("(el) => el.scrollTop") == offset
+        expect(details).to_be_hidden()
+    page.locator("#prev").click()
     expect(page.locator("#jump")).to_have_value("0")
     expect(details).to_be_hidden()
     expect(page.locator("#change")).to_contain_text("原表述过于绝对")
