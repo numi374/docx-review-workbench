@@ -1,6 +1,11 @@
 const lines = (value) => String(value ?? '').split(/\r?\n/);
-const quoted = (value, fallback) => lines(value || fallback).map((line) => '> ' + line).join('\n');
+const quoted = (value) => lines(value).map((line) => '> ' + line).join('\n');
 const oneLine = (value) => lines(value).join(' ').trim();
+
+export function annotationSuggestion(note) {
+  return [...new Set([note.suggestion, note.suggestedAction]
+    .map((value) => typeof value === 'string' ? value.trim() : '').filter(Boolean))].join('\n');
+}
 
 export function makeFeedback({ projectName, originalName, baseName, revisedName, roundNumber, date, annotations }) {
   const out = [
@@ -10,15 +15,17 @@ export function makeFeedback({ projectName, originalName, baseName, revisedName,
     '- 反馈日期：' + date, '', '## 问题列表', '',
   ];
   for (const [index, note] of annotations.entries()) {
-    out.push('### 问题 ' + (index + 1), '', '**批注编号：** ' + note.number, '',
-      '**位置：** ' + oneLine(note.location), '',
-      '**所属文档：** ' + oneLine(note.fileName), '',
-      '**选中文字：**', '', quoted(note.quote, '无选区'), '',
-      '**原文：**', '', quoted(note.before, '无对应原文段落'), '',
-      '**二校内容：**', '', quoted(note.after, '无对应二校段落'), '',
-      '**Codex 原修改原因：**', '', quoted(note.reason, '未找到已关联的修改说明'), '',
-      '**人工复核意见：**', '', quoted(note.comment, '无'), '',
-      '**建议处理方式：**', '', quoted(note.suggestion, '请结合人工复核意见判断并处理。'), '');
+    out.push('### 问题 ' + (index + 1), '');
+    for (const [label, value] of [['批注编号', note.number], ['位置', note.location], ['所属文档', note.fileName]]) {
+      const text = oneLine(value);
+      if (text) out.push('**' + label + '：** ' + text, '');
+    }
+    for (const [label, value] of [
+      ['选中文字', note.quote], ['原文', note.before], ['二校内容', note.after], ['Codex 原修改原因', note.reason],
+      ['人工复核意见', note.comment], ['建议处理方式', annotationSuggestion(note)],
+    ]) {
+      if (value?.trim()) out.push('**' + label + '：**', '', quoted(value), '');
+    }
     if (note.needsLocation) out.push('**定位状态：** 待重新定位。所列位置及引文来自上一轮，请在当前稿核对。', '');
   }
   out.push('## 反馈总要求', '', '请根据上述人工意见重新检查并修改文档。', '',

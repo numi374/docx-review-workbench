@@ -97,8 +97,25 @@ function refsOf(project) {
 const archive = (entries) => new Promise((resolve, reject) =>
   zip(entries, { level: 0 }, (error, result) => error ? reject(error) : resolve(result)));
 
+export function compactAnnotation(value) {
+  if (value == null || (typeof value === 'string' && !value.trim())) return undefined;
+  if (Array.isArray(value)) {
+    const items = value.map(compactAnnotation).filter((entry) => entry !== undefined);
+    return items.length ? items : undefined;
+  }
+  if (typeof value === 'object') {
+    const fields = Object.entries(value).map(([name, entry]) => [name, compactAnnotation(entry)])
+      .filter(([, entry]) => entry !== undefined);
+    return fields.length ? Object.fromEntries(fields) : undefined;
+  }
+  return value;
+}
+
 export async function exportProject(project) {
-  const entries = { 'project.json': strToU8(JSON.stringify({ format: 'docx-review-project', version: 1, project })) };
+  const cleaned = { ...project, rounds: project.rounds.map((round) => ({
+    ...round, annotations: round.annotations.map(compactAnnotation),
+  })) };
+  const entries = { 'project.json': strToU8(JSON.stringify({ format: 'docx-review-project', version: 1, project: cleaned })) };
   let size = entries['project.json'].byteLength;
   for (const ref of refsOf(project)) {
     const file = await getFile(ref);
@@ -133,7 +150,8 @@ function validate(project) {
     for (const annotation of round.annotations) {
       if (!object(annotation) || !text(annotation.id) || noteIds.has(annotation.id) || !text(annotation.comment) ||
           !text(annotation.quote) || !text(annotation.paragraph) || !text(annotation.anchor) ||
-          !['left', 'right'].includes(annotation.side) || !['pending', 'confirmed'].includes(annotation.status) ||
+          !['left', 'right'].includes(annotation.side) ||
+          (annotation.status != null && annotation.status !== '' && !['pending', 'confirmed'].includes(annotation.status)) ||
           !Number.isInteger(annotation.start) || !Number.isInteger(annotation.end) ||
           annotation.start < 0 || annotation.end <= annotation.start) throw new Error('备份包含无效的人工批注。');
       noteIds.add(annotation.id);

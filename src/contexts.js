@@ -37,7 +37,7 @@ export function positionLabel(position) {
   const parts = [];
   if (position.section) parts.push(position.section);
   if (position.note) parts.push((position.note.startsWith('fn-') ? '脚注 ' : '尾注 ') + position.note.slice(3));
-  if (position.number !== null) parts.push('第 ' + position.number + ' 段');
+  if (position.number != null) parts.push('第 ' + position.number + ' 段');
   if (position.table) parts.push('表 ' + position.table + ' · 第 ' + position.row + ' 行第 ' + position.cell + ' 单元格');
   return parts.join(' / ') || '文档正文';
 }
@@ -71,7 +71,7 @@ export function annotationEvidence(anchor, changes, positionsBySide) {
 export function carryAnnotation(annotation, sourceRound, newRound, rightIndex, rightRoot) {
   const origin = { roundId: sourceRound.id, annotationId: annotation.id, number: annotation.number };
   const prior = { ...annotation, id: crypto.randomUUID(), origin, changeId: null, changeIds: undefined,
-    status: 'pending', createdAt: annotation.createdAt, needsLocation: true };
+    needsLocation: true };
   if (annotation.needsLocation) return prior;
   if (annotation.parts?.length) {
     const parts = annotation.parts;

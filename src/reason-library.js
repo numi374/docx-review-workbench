@@ -31,10 +31,10 @@ export function createReasonLibrary(byId, action) {
       row.className = 'reason-row';
       const choose = action(entry.text, () => {
         const comment = byId('comment-text');
-        const previous = comment.value.trim();
-        if (!previous) comment.value = entry.text;
-        else if (!previous.split('\n').includes(entry.text)) {
-          const combined = entry.text + '\n' + previous;
+        const previous = comment.value;
+        if (!previous.trim()) comment.value = entry.text;
+        else if (!('\n' + previous + '\n').includes('\n' + entry.text + '\n')) {
+          const combined = previous + (previous.endsWith('\n') ? '' : '\n') + entry.text;
           if (combined.length > comment.maxLength) return message('批注内容超过长度上限。');
           comment.value = combined;
         }

@@ -94,13 +94,10 @@ def select_text(page, quote, side="right"):
     expect(page.locator("#comment-dialog")).to_be_visible()
 
 
-def annotation(page, quote, comment, suggestion="", confirmed=False):
+def annotation(page, quote, comment):
     select_text(page, quote)
     expect(page.locator("#quote")).to_have_text(quote)
     page.locator("#comment-text").fill(comment)
-    page.locator("#comment-suggestion").fill(suggestion)
-    if confirmed:
-        page.locator("#comment-status").select_option("confirmed")
     page.locator("#comment-text").press("Control+Enter")
     expect(page.locator("#comment-dialog")).not_to_be_visible()
 
@@ -185,8 +182,14 @@ def exercise(p, url, folder):
     select_text(page, "降低", "right")
     expect(page.locator("#comment-dialog")).to_have_class("document-popover anchored-editor")
     expect(page.locator("#quote")).to_have_text("降低")
+    expect(page.locator("#comment-form textarea")).to_have_count(1)
+    expect(page.locator("#comment-suggestion, #comment-status")).to_have_count(0)
     page.get_by_role("button", name="语法错误", exact=True).click()
     expect(page.locator("#comment-text")).to_have_value("语法错误")
+    page.locator("#comment-text").fill("自定义文字")
+    page.get_by_role("button", name="语法错误", exact=True).click()
+    page.get_by_role("button", name="语法错误", exact=True).click()
+    expect(page.locator("#comment-text")).to_have_value("自定义文字\n语法错误")
     page.keyboard.press("Escape")
     expect(page.locator("#comment-dialog")).to_be_hidden()
     drag_text(page, "降低", through="算法验证通过。")
@@ -252,14 +255,43 @@ def exercise(p, url, folder):
     expect(page.locator("#change")).to_contain_text("人工匹配")
 
     mode.click()
-    annotation(page, "降低", "请核对恢复范围。", "建议说明实际验证范围。")
+    annotation(page, "降低", "请核对恢复范围。")
     annotation(page, "请阅最新的复核记录。", "核对归档链接。")
-    annotation(page, "验证恢复", "此处表述已经确认。", confirmed=True)
+    annotation(page, "验证恢复", "此处表述已经确认。")
+    # Emulate a stored record from the previous form, which could assign status and suggestions.
+    page.evaluate("""projectId => new Promise((resolve, reject) => {
+      const opening = indexedDB.open('docx-review-engine-prototype');
+      opening.onerror = () => reject(opening.error);
+      opening.onsuccess = () => {
+        const db = opening.result;
+        const tx = db.transaction('review', 'readwrite');
+        const store = tx.objectStore('review');
+        const key = 'project:' + projectId;
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const project = request.result;
+          const notes = project.rounds[0].annotations;
+          if (notes.length !== 3 || notes.some(n => ['status', 'suggestion', 'suggestedAction'].some(k => Object.hasOwn(n, k)))) {
+            tx.abort();
+            return;
+          }
+          Object.assign(notes[2], { status: 'confirmed', suggestion: ' ', suggestedAction: '核对旧版确认记录。' });
+          store.put(project, key);
+        };
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onabort = () => { db.close(); reject(tx.error ?? new Error('New annotations must omit legacy fields')); };
+      };
+    })""", page.locator("#project-select").input_value())
+    page.reload()
+    wait_status(page, "已恢复")
+    toggle.click()
     expect(page.locator("#comment-count")).to_have_text("人工批注（3）")
     page.locator("#comment-filter").select_option("confirmed")
     expect(page.locator("#comments")).to_contain_text("此处表述已经确认")
+    expect(page.locator("#comments")).to_contain_text("核对旧版确认记录。")
     expect(page.locator("#comments")).not_to_contain_text("请核对恢复范围")
     page.locator("#comment-filter").select_option("all")
+    mode.click()
     drag_text(page, "降低")
     page.locator("#reason-search").fill("恢复范围")
     expect(page.get_by_role("button", name="请核对恢复范围。", exact=True)).to_have_count(1)
@@ -272,7 +304,8 @@ def exercise(p, url, folder):
     checks.nth(1).uncheck()
     markdown_text = page.locator("#feedback-preview").input_value()
     assert all(value in markdown_text for value in ["R1-A001", "恢复目标", "原表述过于绝对",
-        "完全避免数据丢失", "降低数据丢失", "建议说明实际验证范围"])
+        "完全避免数据丢失", "降低数据丢失", "请核对恢复范围"])
+    assert "**建议处理方式：**" not in markdown_text and "请结合人工复核意见判断并处理" not in markdown_text
     assert "核对归档链接" not in markdown_text and "此处表述已经确认" not in markdown_text
     page.locator("#feedback-copy").click()
     expect(page.locator("#feedback-status")).to_contain_text("已复制全部反馈")
@@ -320,13 +353,18 @@ def exercise(p, url, folder):
         saved = json.loads(bundle.read("project.json"))["project"]
         assert saved["original"]["hash"] == document_hash and len(saved["rounds"]) == 3
         assert saved["rounds"][0]["feedback"][0]["markdown"] == markdown_text
-        assert len(saved["rounds"][0]["annotations"]) == 3
+        annotations = saved["rounds"][0]["annotations"]
+        assert len(annotations) == 3
+        assert all(key not in annotations[0] for key in ("status", "suggestion", "suggestedAction"))
+        assert annotations[2]["status"] == "confirmed"
+        assert "suggestion" not in annotations[2] and annotations[2]["suggestedAction"] == "核对旧版确认记录。"
         assert saved["rounds"][1]["annotations"][0]["status"] == "confirmed"
         assert saved["rounds"][1]["baseRoundId"] == saved["rounds"][0]["id"]
         assert saved["rounds"][2]["baseRoundId"] is None
         assert len(bundle.namelist()) == 7
-        legacy_note = {key: saved["rounds"][0]["annotations"][0][key] for key in
-            ("id", "anchor", "side", "start", "end", "quote", "paragraph", "changeId", "createdAt", "comment", "status")}
+        legacy_note = {key: annotations[0][key] for key in
+            ("id", "anchor", "side", "start", "end", "quote", "paragraph", "changeId", "createdAt", "comment")}
+        legacy_note.update(status="pending", suggestion="建议说明实际验证范围。", suggestedAction="补充验证记录的来源。")
     context.close()
 
     reopened = p.chromium.launch_persistent_context(str(profile), channel="msedge", viewport={"width": 1600, "height": 1050})
@@ -403,6 +441,20 @@ def exercise(p, url, folder):
     legacy.reload()
     wait_status(legacy, "已恢复")
     expect(legacy.locator("#project-select option")).to_have_count(2)
+    legacy.locator("#toggle").click()
+    legacy.locator("#comments").get_by_role("button", name="定位", exact=True).click()
+    legacy.locator("#comments").get_by_role("button", name="编辑", exact=True).click()
+    expect(legacy.locator("#comment-form textarea")).to_have_count(1)
+    expect(legacy.locator("#quote")).to_have_text("降低")
+    legacy.locator("#comment-text").fill("已修改旧批注正文。")
+    legacy.locator("#comment-save").click()
+    wait_status(legacy, "批注已保存")
+    assert legacy.evaluate("CSS.highlights.get('review-annotations').size") == 1
+    legacy.locator("#feedback").click()
+    with legacy.expect_download() as down:
+        legacy.locator("#feedback-export").click()
+    exported = Path(down.value.path()).read_text(encoding="utf-8")
+    assert all(text in exported for text in ("降低", "已修改旧批注正文。", "建议说明实际验证范围。", "补充验证记录的来源。"))
     browser.close()
     print("PASS: notes, clipboard/export, 3 rounds, re-anchoring, browser restart, ZIP restore and legacy migration.")
 

@@ -6,11 +6,11 @@ import { captureAnchor, resolveRange } from './anchors';
 import { mapScrollTop, measureBlocks, pairOffsets } from './upstream/ui/scrollMapping';
 import { annotationEvidence, carryAnnotation, indexPositions, locateChange, positionLabel } from './contexts';
 import { noteDocumentText, parseNotes, assessNotes } from './notes.mjs';
-import { makeFeedback } from './feedback.mjs';
+import { annotationSuggestion, makeFeedback } from './feedback.mjs';
 import { createHoverReasons } from './hover-reasons';
 import { createReasonLibrary } from './reason-library';
 import {
-  createProject, exportProject, getActive, getFile, getLegacy, getProject, listProjects, restoreProject,
+  compactAnnotation, createProject, exportProject, getActive, getFile, getLegacy, getProject, listProjects, restoreProject,
   saveNewProject, saveRound, setActive, stageFile, wasMigrated,
 } from './storage';
 import panelCss from './panel.css?inline';
@@ -496,7 +496,7 @@ function paintAnnotations() {
   list.replaceChildren();
   const filter = byId('comment-filter').value;
   const visible = placed.filter(({ annotation, range }) =>
-    filter === 'all' || (filter === 'locate' ? !range : annotation.status === filter));
+    filter === 'all' || (filter === 'locate' ? !range : (annotation.status === 'confirmed' ? 'confirmed' : 'pending') === filter));
   if (!visible.length) list.textContent = placed.length ? '此筛选条件下没有批注。' : '开启批注模式后，在任一栏拖选文字添加批注。';
   for (const { annotation, panel, range } of visible) {
     const row = dom('div', undefined, 'item');
@@ -516,7 +516,8 @@ function paintAnnotations() {
     quote.className = 'quote-button change-text';
     quote.disabled = !range;
     row.append(quote, dom('p', annotation.comment));
-    if (annotation.suggestion) row.append(dom('p', '建议：' + annotation.suggestion, 'muted'));
+    const suggestion = annotationSuggestion(annotation);
+    if (suggestion) row.append(dom('p', '建议：' + suggestion, 'muted'));
     const evidence = dom('details', undefined, 'annotation-evidence');
     evidence.append(dom('summary', '查看原文、二校稿和原因'),
       dom('div', '原文：' + (context?.left?.text ?? '无对应段落'), 'change-text before'),
@@ -533,7 +534,7 @@ function paintAnnotations() {
       await saveAnnotations(current.annotations.filter((item) => item.id !== annotation.id));
     }));
     if (!range) row.append(action('重新定位', () => startReanchor(annotation.id)));
-    if (annotation.origin && annotation.status === 'pending') row.append(action('确认已处理', () =>
+    if (annotation.origin && annotation.status !== 'confirmed') row.append(action('确认已处理', () =>
       saveAnnotations(current.annotations.map((item) => item.id === annotation.id ? { ...item, status: 'confirmed' } : item))));
     list.append(row);
   }
@@ -761,8 +762,6 @@ function editAnnotation(annotation, pin = null) {
   reasonLibrary.reset();
   byId('quote').textContent = annotation.quote;
   byId('comment-text').value = annotation.comment ?? '';
-  byId('comment-suggestion').value = annotation.suggestion ?? '';
-  byId('comment-status').value = annotation.status ?? 'pending';
   dialog.classList.toggle('document-popover', Boolean(pin));
   dialog.classList.toggle('anchored-editor', Boolean(pin));
   if (!pin) {
@@ -875,14 +874,15 @@ byId('comment-form').addEventListener('submit', async (event) => {
   if (!comment || !editing || running || saving) return;
   const button = byId('comment-save');
   button.disabled = true;
-  const annotation = {
+  const draft = {
     ...editing, id: editing.id ?? crypto.randomUUID(), createdAt: editing.createdAt ?? new Date().toISOString(),
     number: editing.number ?? nextNumber(current, current.nextAnnotationNumber),
     fileHash: editing.fileHash ?? (editing.side === 'left' ? current.base.hash : current.revised.hash),
     evidence: editing.evidence ?? annotationEvidence(editing, changes, positionsBySide),
-    reasonAtReview: reasonFor(editing),
-    comment, suggestion: byId('comment-suggestion').value.trim(), status: byId('comment-status').value,
+    reasonAtReview: reasonFor(editing) || editing.reasonAtReview,
+    comment,
   };
+  const annotation = editing.id ? draft : compactAnnotation(draft);
   const notes = editing.id ? current.annotations.map((item) => item.id === annotation.id ? annotation : item) :
     [...current.annotations, annotation];
   try {
@@ -1074,7 +1074,7 @@ function openFeedback(snapshot = null) {
   } else {
     feedbackSelection.clear();
     for (const { annotation, range } of placed) {
-      if (annotation.status === 'pending' && range) feedbackSelection.add(annotation.id);
+      if (annotation.status !== 'confirmed' && range) feedbackSelection.add(annotation.id);
     }
     byId('include-confirmed').checked = false;
     renderFeedbackOptions();
@@ -1153,7 +1153,7 @@ function renderHistory() {
   list.replaceChildren();
   for (const round of [...project.rounds].reverse()) {
     const row = dom('article', undefined, 'history-round');
-    const pending = round.annotations.filter((note) => note.status === 'pending').length;
+    const pending = round.annotations.filter((note) => note.status !== 'confirmed').length;
     row.append(dom('strong', '第 ' + round.order + ' 轮 · ' + round.revised.name),
       dom('small', '基准：' + round.base.name + ' · ' + new Date(round.createdAt).toLocaleString('zh-CN'), 'block-meta'),
       dom('small', '批注 ' + round.annotations.length + ' 条 · 待处理 ' + pending + ' 条 · 反馈 ' + round.feedback.length + ' 份', 'block-meta'));
